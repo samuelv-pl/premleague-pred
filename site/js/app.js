@@ -45,31 +45,22 @@
   const sameClock = (d) => hm(d, LOCAL) === hm(d, UK) && dayKey(d, LOCAL) === dayKey(d, UK);
   const localIsUK = sameClock(new Date('2026-01-15T12:00:00Z')) && sameClock(new Date('2026-07-15T12:00:00Z'));
 
-  function timeMode() { return localIsUK ? 'uk' : store.get('s6.timeMode', 'local'); }
-
-  // Main time plus the other zone underneath. Days are grouped by UK matchday,
-  // so when the viewer's date differs from the UK date we show their weekday too.
+  // Kick-off time in the viewer's own zone. UK time follows as a quiet reference
+  // only when it differs. Days are grouped by UK matchday, so when the viewer's date
+  // differs from the UK date their weekday is added.
   function timeHTML(d) {
-    const ukT = hm(d, UK);
-    if (localIsUK || sameClock(d)) {
-      return `<span class="main">${ukT}</span><span class="alt">${localIsUK ? 'UK' : 'UK and you'}</span>`;
-    }
-    const locT = hm(d, LOCAL);
+    const loc = hm(d, LOCAL);
+    if (localIsUK || sameClock(d)) return `<span class="main">${loc}</span>`;
     const locDiff = dayKey(d, LOCAL) !== dayKey(d, UK);
-    const locLabel = (locDiff ? fmt(d, LOCAL, { weekday: 'short' }) + ' ' : '') + locT;
-    if (timeMode() === 'uk') {
-      return `<span class="main">${ukT}</span><span class="alt">You ${esc(locLabel)}</span>`;
-    }
-    return `<span class="main">${esc(locLabel)}</span><span class="alt">UK ${ukT}</span>`;
+    const main = (locDiff ? fmt(d, LOCAL, { weekday: 'short' }) + ' ' : '') + loc;
+    return `<span class="main">${esc(main)}</span><span class="alt">${hm(d, UK)}\u00a0UK</span>`;
   }
-  // One-line version for sentences: "Sat 21 Nov, 18:00 your time (12:30 UK)".
+  // One-line version for sentences: "Sat 21 Nov, 18:00 (12:30 UK)".
   function whenText(d) {
-    const ukFull = `${shortDay(d, UK)}, ${hm(d, UK)}\u00a0UK`;
-    if (localIsUK || sameClock(d)) return ukFull;
+    const loc = `${shortDay(d, LOCAL)}, ${hm(d, LOCAL)}`;
+    if (localIsUK || sameClock(d)) return loc;
     const sameDay = dayKey(d, LOCAL) === dayKey(d, UK);
-    const locFull = `${shortDay(d, LOCAL)}, ${hm(d, LOCAL)}\u00a0your time`;
-    if (timeMode() === 'uk') return `${ukFull} (${sameDay ? hm(d, LOCAL) : shortDay(d, LOCAL) + ', ' + hm(d, LOCAL)}\u00a0your time)`;
-    return `${locFull} (${sameDay ? hm(d, UK) : shortDay(d, UK) + ', ' + hm(d, UK)}\u00a0UK)`;
+    return `${loc} (${sameDay ? hm(d, UK) : shortDay(d, UK) + ', ' + hm(d, UK)}\u00a0UK)`;
   }
 
   const CODES = {
@@ -90,7 +81,21 @@
     bars: svg('M3 13.5V9M8 13.5V3.5M13 13.5V6.5'),
     minus: svg('M4 8h8'), plus: svg('M8 4v8M4 8h8'),
     clock: svg('M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 5v3.2l2.2 1.4'),
+    lock: svg('M4.5 7.5h7v6h-7zM6 7.5V5.5a2 2 0 0 1 4 0v2'),
+    same: svg('M5 8h6'),
   };
+  // Page heading: title and one status line, with page controls (gameweek stepper) beside it.
+  function pageHead(title, lede, right) {
+    return `<div class="head"><div class="head-t"><h1>${title}</h1>${lede ? `<p class="lede">${lede}</p>` : ''}</div>${right ? `<div class="head-r">${right}</div>` : ''}</div>`;
+  }
+  // The block between the two teams: full-time score, live, postponed, or "v".
+  function scoreHTML(f) {
+    if (isDone(f)) return `<span class="score"><b>${f.home_goals}-${f.away_goals}</b><small>FT</small></span>`;
+    if (f.status === 'POSTPONED') return '<span class="score pp"><b>P-P</b></span>';
+    if (f.status === 'IN_PLAY') return '<span class="score live"><b>Live</b></span>';
+    return '<span class="score v"><b>v</b></span>';
+  }
+  const ptsChip = (pts) => `<span class="pts p${pts}">${pts}\u00a0pt${pts === 1 ? '' : 's'}</span>`;
   // Club crests and the competition emblem, served by football-data.org (the results feed).
   const CREST_IDS = {
     'Arsenal': 57, 'Aston Villa': 58, 'Bournemouth': 1044, 'Brentford': 402, 'Brighton': 397,
@@ -298,7 +303,7 @@
   <nav class="tabs" aria-label="Sections">${tabs().map(([k, l]) => `<a href="#/${k}"${k === active ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
 </div></header>
 <main><div class="wrap">${warn.join('')}${body}</div></main>
-<footer class="foot"><div class="wrap"><p>RTFM Mods · ${esc(CFG.season)}. Updated ${S.loadedAt ? esc(hm(new Date(S.loadedAt), LOCAL)) : '-'} your time. Results come from football-data.org and can arrive a few minutes late. This page refreshes every minute.</p></div></footer>`;
+<footer class="foot"><div class="wrap"><p>RTFM Mods · ${esc(CFG.season)}. Updated ${S.loadedAt ? esc(hm(new Date(S.loadedAt), LOCAL)) : '-'}. Results come from football-data.org and can arrive a few minutes late. This page refreshes every minute.</p></div></footer>`;
   }
 
   function bind() {
@@ -307,7 +312,7 @@
       if (el.tagName === 'FORM') return;
       el.addEventListener('click', (ev) => {
         if (act === 'retry') { ev.preventDefault(); refresh(!S.data); }
-        if (act === 'tm') { store.set('s6.timeMode', el.getAttribute('data-v')); render(); }
+        if (act === 'bview') { store.set('s6.bonusView', el.getAttribute('data-v')); render(); }
         if (act === 's6only') { store.set('s6.s6only', el.checked ? '1' : '0'); render(); }
         if (act === 'theme') {
           const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
@@ -444,20 +449,20 @@
       const gap = second ? lead.total - second.total : 0;
       const leaders = d.board.filter((b) => b.rank === 1).map((b) => b.name);
       leadLine = leaders.length > 1
-        ? `<b>${leaders.map(esc).join(' and ')} lead</b>${line(`Level on ${lead.total} points`)}`
-        : `<b>${esc(lead.name)} leads</b>${line(`${lead.total} points, ${gap ? `${gap} clear of ${esc(second.name)}` : `ahead of ${esc(second.name)} on the tie-break`}`)}`;
+        ? `<b>${ICON.trophy}${leaders.map(esc).join(' and ')} lead</b>${line(`Level on ${lead.total} points`)}`
+        : `<b>${ICON.trophy}${esc(lead.name)} leads</b>${line(`${lead.total} points, ${gap ? `${gap} clear of ${esc(second.name)}` : `ahead of ${esc(second.name)} on the tie-break`}`)}`;
     }
     let weekLine = '';
     if (cur && cur.six.length) {
       weekLine = cur.done
-        ? `<b>GW${cur.gw}: ${cur.done} of ${cur.six.length} results in</b>${line(`${esc(cur.leaders.join(', '))} ${cur.complete ? 'won it' : (cur.leaders.length > 1 ? 'lead' : 'leads')} with ${cur.best}`)}${act(`#/gw/${cur.gw}`, 'See the picks')}`
-        : `<b>GW${cur.gw} starts ${esc(shortDay(cur.six.slice().sort((x, y) => x.ko - y.ko)[0].ko, LOCAL))}</b>${act(`#/fixtures/${cur.gw}`, 'See the fixtures')}`;
+        ? `<b>${ICON.bars}GW${cur.gw}: ${cur.done} of ${cur.six.length} results in</b>${line(`${esc(cur.leaders.join(', '))} ${cur.complete ? 'won it' : (cur.leaders.length > 1 ? 'lead' : 'leads')} with ${cur.best}`)}${act(`#/gw/${cur.gw}`, 'See the picks')}`
+        : `<b>${ICON.bars}GW${cur.gw} starts ${esc(shortDay(cur.six.slice().sort((x, y) => x.ko - y.ko)[0].ko, LOCAL))}</b>${act(`#/fixtures/${cur.gw}`, 'See the fixtures')}`;
     }
     const dl = nextDeadline();
-    let dlLine = `<b>No open picks</b>${line('The season is done')}`;
+    let dlLine = `<b>${ICON.clock}No open picks</b>${line('The season is done')}`;
     if (dl) {
       const what = dl.fixture ? `${esc(dl.fixture.home)} v ${esc(dl.fixture.away)}` : `GW${dl.gw} picks`;
-      const ukPart = localIsUK || sameClock(dl.at) ? '' : ` <span class="muted">(${esc(hm(dl.at, UK))} UK)</span>`;
+      const ukPart = localIsUK || sameClock(dl.at) ? '' : ` <span class="muted">${esc(hm(dl.at, UK))} UK</span>`;
       let cta = '';
       if (!S.session) cta = act('#/login', 'Sign in to pick');
       else if (S.me) {
@@ -465,16 +470,16 @@
         const mine = six.filter((f) => d.predMap.get(S.me.id + ':' + f.id)).length;
         cta = act(`#/predict/${dl.gw}`, mine === six.length ? 'All six picked, review' : `${mine} of ${six.length} picked, pick now`);
       }
-      dlLine = `<b>Next lock ${esc(untilText(dl.at))}</b>${line(what)}${line(`${esc(shortDay(dl.at, LOCAL))}, ${esc(hm(dl.at, LOCAL))}${ukPart}`)}${cta}`;
+      dlLine = `<b>${ICON.clock}Next lock ${esc(untilText(dl.at))}</b>${line(what)}${line(`${esc(shortDay(dl.at, LOCAL))}, ${esc(hm(dl.at, LOCAL))}${ukPart}`)}${cta}`;
     }
 
     const rows = d.board.map((b) => {
-      let mv = '<span class="mv same" title="No earlier week to compare">–</span>';
+      let mv = `<span class="mv same" title="No earlier week to compare">${ICON.same}<span class="sr">No change</span></span>`;
       if (before && before[b.player_id] != null) {
         const diff = before[b.player_id] - b.rank;
         if (diff > 0) mv = `<span class="mv up" title="Up ${diff} since GW${base}">${ICON.up}${diff}</span>`;
         else if (diff < 0) mv = `<span class="mv down" title="Down ${-diff} since GW${base}">${ICON.down}${-diff}</span>`;
-        else mv = `<span class="mv same" title="No change since GW${base}">=</span>`;
+        else mv = `<span class="mv same" title="No change since GW${base}">${ICON.same}<span class="sr">No change</span></span>`;
       }
       const me = S.me && S.me.id === b.player_id;
       const podium = b.rank <= 3 ? ` p${b.rank}` : '';
@@ -482,7 +487,7 @@
       return `<tr class="${me ? 'me' : ''}${podium}">
         <td class="pos"><span class="rank">${b.rank}</span></td>
         <td class="mvc">${mv}</td>
-        <td class="l name">${esc(b.name)}${me ? '<span class="you">You</span>' : ''}<span class="sub"><span>${b.exact} exact</span> · <span>${b.gd} GD</span> · <span>${b.outcome} result${b.outcome === 1 ? '' : 's'}</span>${b.bonus ? ` · <span>${b.bonus} bonus</span>` : ''}</span></td>
+        <td class="l name"><span class="nmx">${esc(b.name)}${me ? '<span class="you">You</span>' : ''}</span><span class="sub"><span>${b.exact} exact</span><span>${b.gd} GD</span><span>${b.outcome} result${b.outcome === 1 ? '' : 's'}</span>${b.bonus ? `<span>${b.bonus} bonus</span>` : ''}</span></td>
         <td class="wide">${b.exact}</td><td class="wide">${b.gd}</td><td class="wide">${b.outcome}</td>
         <td class="xwide">${b.match_pts}</td><td class="wide">${b.bonus}</td>
         <td class="xwide formc">${form.length ? formSVG(form) : ''}</td>
@@ -491,18 +496,14 @@
         <td class="tot">${b.total}</td>
       </tr>`;
     }).join('');
+    const facts = [`Gameweek ${d.currentGw} of 38`, `${scored} of ${total6} Super 6 results in`];
+    if (outstanding && cur && cur.done) facts.push(`${outstanding} still to play this week`);
     return `
-<section class="hero">
-  <div class="hero-top">
-    <span class="hero-mark"><img class="emblem" src="${PL_EMBLEM}" alt="Premier League" width="44" height="44"></span>
-    <div><h1>${esc(CFG.season)}</h1><p>RTFM Mods Prediction League</p></div>
-  </div>
-  <p class="hero-facts"><span>Gameweek ${d.currentGw} of 38</span><span>${scored} of ${total6} Super 6 results in</span>${outstanding && cur && cur.done ? `<span>${outstanding} result${outstanding === 1 ? '' : 's'} outstanding this week</span>` : ''}</p>
-</section>
+${pageHead('League table', facts.map((x) => `<span>${x}</span>`).join(''))}
 <section class="summary panel" aria-label="At a glance">
-  <div class="item lead"><span class="badge">${ICON.trophy}</span><p>${leadLine}</p></div>
-  <div class="item"><span class="badge">${ICON.bars}</span><p>${weekLine}</p></div>
-  <div class="item"><span class="badge">${ICON.clock}</span><p>${dlLine}</p></div>
+  <div class="item lead"><p>${leadLine}</p></div>
+  <div class="item"><p>${weekLine}</p></div>
+  <div class="item"><p>${dlLine}</p></div>
 </section>
 <div class="panel tablewrap">
 <table class="league">
@@ -563,13 +564,12 @@
         state = '<span class="pill">to play</span>';
         winner = w.lock ? `<span class="muted">${d.set.lock_mode === 'per_match' ? 'First kick-off' : 'Picks lock'} ${esc(whenText(w.lock))}</span>` : '';
       }
-      const mine = S.me && w.done ? `${w.pts[S.me.id] != null ? w.pts[S.me.id] : 0}<small>you</small>` : '';
+      const mine = S.me && w.done ? `<small>You</small><b>${w.pts[S.me.id] != null ? w.pts[S.me.id] : 0}</b>` : '';
       return `<li><a href="#/gw/${w.gw}"><span class="n">GW${w.gw}</span><span class="w">${winner}${state}</span><span class="mine">${mine}</span><span class="go">${ICON.next}</span></a></li>`;
     }).join('');
 
     return `
-<div class="head"><div><h1>Gameweeks</h1>
-<p class="lede">Points per week, and who took each one.</p></div></div>
+${pageHead('Gameweeks', 'Points per week, and who took each one.')}
 <div class="panel">
   <div class="panel-head"><h2>Points per gameweek</h2><label class="sr" for="chartPlayer">Player</label><select id="chartPlayer" data-chart-player class="sel">${opts}</select></div>
   <div class="chart">
@@ -653,43 +653,69 @@
     const locked = lock && Date.now() >= lock.getTime();
     const perMatch = d.set.lock_mode === 'per_match';
     const people = d.board.map((b) => d.byId[b.player_id]).filter(Boolean);
+    const done = six.filter(isDone).length;
+    const anyDone = done > 0;
     const rows = people.map((p) => {
       let tot = 0;
       const cells = six.map((f) => {
         const pr = d.predMap.get(p.id + ':' + f.id);
         if (!pr) {
           const hidden = !(S.me && p.id === S.me.id) && !isLocked(f);
-          return `<td><span class="cell none" title="${hidden ? 'Hidden until the lock' : 'No pick'}">${hidden ? '·' : '–'}</span></td>`;
+          return hidden
+            ? `<td><span class="pk hid" title="Hidden until kick-off">${ICON.lock}<span class="sr">Hidden until kick-off</span></span></td>`
+            : '<td><span class="pk none" title="No pick"><span class="sr">No pick</span></span></td>';
         }
         const pts = isDone(f) ? score(pr.home_goals, pr.away_goals, f.home_goals, f.away_goals) : null;
         if (pts != null) tot += pts;
-        const cls = pts == null ? 'p0' : 'p' + pts;
-        const t = `${p.name}: ${pr.home_goals}-${pr.away_goals}${pts != null ? `, ${pts} pt${pts === 1 ? '' : 's'}` : ''}`;
-        return `<td><span class="cell ${cls}" title="${esc(t)}">${pr.home_goals}-${pr.away_goals}${pts ? `<sup>${pts}</sup>` : ''}</span></td>`;
+        const cls = pts == null ? 'wait' : 'p' + pts;
+        const t = `${p.name}: ${f.home} ${pr.home_goals}-${pr.away_goals} ${f.away}${pts != null ? `, ${pts} point${pts === 1 ? '' : 's'}` : ''}`;
+        return `<td><span class="pk ${cls}" title="${esc(t)}"><b>${pr.home_goals}-${pr.away_goals}</b>${pts ? `<i><span class="sr">, </span>${pts}<span class="sr"> points</span></i>` : ''}</span></td>`;
       }).join('');
       return { p, tot, html: cells };
     });
-    const anyDone = six.some(isDone);
     if (anyDone) rows.sort((a, b) => b.tot - a.tot || a.p.name.localeCompare(b.p.name));
-    const head = six.map((f) => {
-      const res = isDone(f) ? `${f.home_goals}-${f.away_goals}` : f.status === 'IN_PLAY' ? '<span class="live">Live</span>' : f.status === 'POSTPONED' ? 'P-P' : `${esc(hm(f.ko, timeMode() === 'uk' ? UK : LOCAL))}<small>${timeMode() === 'uk' || localIsUK ? 'UK' : 'your time'}</small>`;
-      return `<th title="${esc(f.home)} v ${esc(f.away)}">${crest(f.home, 22)}<span class="vs">${esc(code(f.home))} v ${esc(code(f.away))}</span>${crest(f.away, 22)}<span class="res">${res}</span></th>`;
-    }).join('');
-    const body = rows.map((r) => `<tr class="${S.me && r.p.id === S.me.id ? 'me' : ''}"><td class="pn">${esc(r.p.name)}</td>${r.html}<td class="tot">${anyDone ? r.tot : ''}</td></tr>`).join('');
+    rows.forEach((r, i) => { r.rank = anyDone ? (i && rows[i - 1].tot === r.tot ? rows[i - 1].rank : i + 1) : null; });
 
+    const head = six.map((f) => {
+      let res, st;
+      if (isDone(f)) { res = `${f.home_goals}-${f.away_goals}`; st = 'FT'; }
+      else if (f.status === 'IN_PLAY') { res = '<span class="live">Live</span>'; st = ''; }
+      else if (f.status === 'POSTPONED') { res = 'P-P'; st = 'Off'; }
+      else { res = esc(hm(f.ko, LOCAL)); st = esc(fmt(f.ko, LOCAL, { weekday: 'short' })); }
+      const cls = isDone(f) ? ' ft' : '';
+      return `<th scope="col" class="mcol${cls}" title="${esc(f.home)} v ${esc(f.away)}, ${esc(whenText(f.ko))}"><span class="mh"><span class="ch">${crest(f.home, 20)}</span><span class="rs">${res}</span><span class="ca">${crest(f.away, 20)}</span></span><span class="ms">${st}</span><span class="sr">${esc(f.home)} v ${esc(f.away)}</span></th>`;
+    }).join('');
+    const body = rows.map((r) => {
+      const me = S.me && r.p.id === S.me.id;
+      return `<tr class="${me ? 'me' : ''}"><th scope="row" class="pn"><span class="rk">${r.rank != null ? r.rank : ''}</span><span class="nm">${esc(r.p.name)}</span></th>${r.html}<td class="tot">${anyDone ? r.tot : ''}</td></tr>`;
+    }).join('');
+
+    // One status line: results in and who leads, then your own points.
     let status = '';
-    if (!six.length) status = 'No Super 6 matches picked for this week yet.';
-    else if (perMatch) status = 'Each pick locks at its own kick-off. Other players’ picks show once a match has kicked off.';
-    else if (locked) status = `Picks locked ${esc(whenText(lock))}.`;
-    else status = `Picks lock ${esc(whenText(lock))}. Until then you only see your own.`;
+    if (!six.length) status = 'The six for this week have not been picked yet.';
+    else if (!anyDone) {
+      const first = six[0].ko;
+      status = first.getTime() > Date.now() ? `First kick-off ${esc(whenText(first))}.` : 'Under way. No results in yet.';
+    } else {
+      const best = rows[0].tot;
+      const lead = rows.filter((r) => r.tot === best).map((r) => esc(r.p.name));
+      const allIn = done === six.length;
+      status = `${done} of ${six.length} results in. ${lead.join(', ')} ${allIn ? 'won it' : (lead.length > 1 ? 'lead' : 'leads')} with ${best}.`;
+      const mineRow = S.me && rows.find((r) => r.p.id === S.me.id);
+      if (mineRow) status += ` You have ${mineRow.tot}.`;
+    }
+    let lockNote;
+    if (perMatch) lockNote = 'Other players’ picks show as each match kicks off.';
+    else if (locked) lockNote = `Picks locked ${esc(whenText(lock))}.`;
+    else lockNote = lock ? `Picks lock ${esc(whenText(lock))}. Until then you only see your own.` : '';
 
     return `
-<div class="head"><h1>Gameweek ${gw}</h1><p class="lede">${status}</p></div>
-<div class="controls">${gwStepper('gw', gw)}</div>
-${six.length ? `<div class="panel">
-<div class="panel-head"><div class="legend"><span><span class="cell p5">5</span>Exact score</span><span><span class="cell p3">3</span>Goal difference</span><span><span class="cell p1">1</span>Result</span><span><span class="cell p0">0</span>Wrong</span></div></div>
-<div class="grid-scroll"><table class="picks"><thead><tr><th></th>${head}<th>Pts</th></tr></thead><tbody>${body}</tbody></table></div></div>` : ''}
-<p class="note"><a href="#/fixtures/${gw}">All GW${gw} fixtures and kick-off times</a></p>`;
+${pageHead(`Gameweek ${gw}`, status, gwStepper('gw', gw))}
+${six.length ? `<div class="panel bleed">
+<div class="grid-scroll"><table class="picks"><thead><tr><th scope="col" class="pn"><span class="sr">Player</span></th>${head}<th scope="col" class="tot">Pts</th></tr></thead><tbody>${body}</tbody></table></div>
+<div class="panel-foot legend"><span><span class="pk p5"><b>5</b></span>Exact score</span><span><span class="pk p3"><b>3</b></span>Goal difference</span><span><span class="pk p1"><b>1</b></span>Result</span><span><span class="pk hid">${ICON.lock}</span>Hidden until kick-off</span></div>
+</div>` : ''}
+<p class="note">${lockNote} <a href="#/fixtures/${gw}">All GW${gw} fixtures</a></p>`;
   }
 
   // ---------------------------------------------------------------- fixtures
