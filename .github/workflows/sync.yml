@@ -2,7 +2,7 @@ name: Sync fixtures and results
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"   # every 5 minutes so live scores stay fresh (public repo: Actions minutes are free)
   workflow_dispatch:
     inputs:
       dry_run:

@@ -79,7 +79,9 @@ def main():
 
         status = STATUS.get(m["status"], "SCHEDULED")
         full = (m.get("score") or {}).get("fullTime") or {}
-        hg, ag = (full.get("home"), full.get("away")) if status == "FINISHED" else (None, None)
+        # Live (in-play) scores are stored too, so the site can show them. They never count
+        # for points: the scoring views only use matches with status FINISHED.
+        hg, ag = (full.get("home"), full.get("away")) if status in ("FINISHED", "IN_PLAY") else (None, None)
         patch = {}
 
         if parse_utc(m["utcDate"]) != parse_utc(row["kickoff"]):
@@ -96,10 +98,14 @@ def main():
         else:
             if status != row["status"]:
                 patch["status"] = status
-            if status == "FINISHED" and (hg, ag) != (row["home_goals"], row["away_goals"]):
-                if row["status"] == "FINISHED":
+            if status in ("FINISHED", "IN_PLAY") and hg is not None and ag is not None \
+                    and (hg, ag) != (row["home_goals"], row["away_goals"]):
+                if status == "FINISHED" and row["status"] == "FINISHED":
                     warnings.append(f"RESULT CHANGED #{row['id']} {home} v {away}: {row['home_goals']}-{row['away_goals']} -> {hg}-{ag}")
                 patch["home_goals"], patch["away_goals"] = hg, ag
+            elif status in ("SCHEDULED", "POSTPONED") and row["status"] == "IN_PLAY" and row["home_goals"] is not None:
+                # A match that was live and then abandoned or reset: drop the partial score.
+                patch["home_goals"], patch["away_goals"] = None, None
 
         if patch:
             changes.append((row, patch))

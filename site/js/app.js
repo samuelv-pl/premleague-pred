@@ -92,6 +92,7 @@
   function scoreHTML(f) {
     if (isDone(f)) return `<span class="score"><b>${f.home_goals}-${f.away_goals}</b><small>FT</small></span>`;
     if (f.status === 'POSTPONED') return '<span class="score pp"><b>P-P</b></span>';
+    if (isLive(f)) return `<span class="score live"><b>${f.home_goals}-${f.away_goals}</b><small>Live</small></span>`;
     if (f.status === 'IN_PLAY') return '<span class="score live"><b>Live</b></span>';
     return '<span class="score v"><b>v</b></span>';
   }
@@ -136,6 +137,21 @@
     return 0;
   }
   const isDone = (f) => f.status === 'FINISHED' && f.home_goals != null && f.away_goals != null;
+  // Live: in play with a (delayed) score from the feed. Live points are provisional and never
+  // reach the official table, which only counts finished matches.
+  const isLive = (f) => f.status === 'IN_PLAY' && f.home_goals != null && f.away_goals != null;
+  const ptsNow = (pr, f) => (pr && (isDone(f) || isLive(f)) ? score(pr.home_goals, pr.away_goals, f.home_goals, f.away_goals) : null);
+  // Provisional points per player from matches in play right now.
+  function livePoints() {
+    const d = S.data, out = {};
+    d.fixtures.filter((f) => f.super6 && isLive(f)).forEach((f) => {
+      d.board.forEach((b) => {
+        const pts = ptsNow(d.predMap.get(b.player_id + ':' + f.id), f);
+        if (pts != null) out[b.player_id] = (out[b.player_id] || 0) + pts;
+      });
+    });
+    return out;
+  }
 
   // ---------------------------------------------------------------- data
   const S = { session: null, me: null, data: null, loadedAt: null, error: null, dirty: false };
@@ -214,12 +230,22 @@
     });
     await refresh(true);
     window.addEventListener('hashchange', () => { hideTip(); render(); window.scrollTo(0, 0); });
+    // Refresh every minute around matches (kick-off minus 15 min to 2.5 h after), otherwise
+    // every 10 minutes. Paused while the tab is hidden. Keeps data use small on the free plan.
     setInterval(() => {
-      if (document.visibilityState === 'visible' && !busyForm()) refresh(false);
+      if (document.visibilityState !== 'visible' || busyForm()) return;
+      const age = Date.now() - (S.loadedAt || 0);
+      if (matchTime() || age > 10 * 60000) refresh(false);
     }, 60000);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && S.loadedAt && Date.now() - S.loadedAt > 60000 && !busyForm()) refresh(false);
     });
+  }
+  function matchTime() {
+    if (!S.data) return true;
+    const now = Date.now();
+    return S.data.fixtures.some((f) => f.status === 'IN_PLAY'
+      || (f.status !== 'FINISHED' && f.status !== 'POSTPONED' && now > f.ko.getTime() - 15 * 60000 && now < f.ko.getTime() + 150 * 60000));
   }
   // Do not redraw under someone who is typing or has unsaved picks.
   const busyForm = () => (!!document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) || S.dirty;
@@ -439,6 +465,8 @@
     const lastFive = completeWeeks.slice(-5);
     const cur = weeks[d.currentGw - 1];
     const outstanding = cur ? cur.six.filter((f) => !isDone(f)).length : 0;
+    const live = livePoints();
+    const nLive = d.fixtures.filter((f) => f.super6 && isLive(f)).length;
     // As in the Sheet: picks made (including future ones) out of every Super 6 match.
     // Without db/06 we can only count locked matches, so fall back to that.
     let picksTotal = d.fixtures.filter((f) => f.super6 && isLocked(f)).length;
@@ -503,10 +531,10 @@
         <td class="xwide formc">${form.length ? formSVG(form) : ''}</td>
         <td>${b.last5}</td>
         <td class="xwide picksc">${picks[b.player_id] || 0}<small> / ${picksTotal}</small></td>
-        <td class="tot">${b.total}</td>
+        <td class="tot">${b.total}${live[b.player_id] ? `<small class="livetag" title="${live[b.player_id]} provisional point${live[b.player_id] === 1 ? '' : 's'} from matches in play, not counted until full time">+${live[b.player_id]} live</small>` : ''}</td>
       </tr>`;
     }).join('');
-    const facts = `Gameweek ${d.currentGw} of 38. ${scored} of ${total6} Super 6 results in${outstanding && cur && cur.done ? `, ${outstanding} still to play this week` : ''}.`;
+    const facts = `Gameweek ${d.currentGw} of 38. ${scored} of ${total6} Super 6 results in${outstanding && cur && cur.done ? `, ${outstanding} still to play this week` : ''}.${nLive ? ` <span class="livedot"></span>${nLive} Super\u00a06 match${nLive === 1 ? '' : 'es'} live: points marked live count once the game ends.` : ''}`;
     return `
 ${pageHead('League table', facts)}
 <section class="summary panel" aria-label="At a glance">
@@ -663,9 +691,10 @@ ${pageHead('Gameweeks', 'Points per week, and who took each one.')}
     const perMatch = d.set.lock_mode === 'per_match';
     const people = d.board.map((b) => d.byId[b.player_id]).filter(Boolean);
     const done = six.filter(isDone).length;
-    const anyDone = done > 0;
+    const anyLive = six.some(isLive);
+    const anyDone = done > 0 || anyLive;
     const rows = people.map((p) => {
-      let tot = 0;
+      let tot = 0, live = 0;
       const cells = six.map((f) => {
         const pr = d.predMap.get(p.id + ':' + f.id);
         if (!pr) {
@@ -674,29 +703,32 @@ ${pageHead('Gameweeks', 'Points per week, and who took each one.')}
             ? `<td><span class="pk hid" title="Hidden until kick-off">${ICON.lock}<span class="sr">Hidden until kick-off</span></span></td>`
             : '<td><span class="pk none" title="No pick"><span class="sr">No pick</span></span></td>';
         }
-        const pts = isDone(f) ? score(pr.home_goals, pr.away_goals, f.home_goals, f.away_goals) : null;
-        if (pts != null) tot += pts;
-        const cls = pts == null ? 'wait' : 'p' + pts;
+        const pts = ptsNow(pr, f);
+        if (pts != null) { if (isDone(f)) tot += pts; else live += pts; }
+        const cls = (pts == null ? 'wait' : 'p' + pts) + (isLive(f) ? ' prov' : '');
         const t = `${p.name}: ${f.home} ${pr.home_goals}-${pr.away_goals} ${f.away}${pts != null ? `, ${pts} point${pts === 1 ? '' : 's'}` : ''}`;
         return `<td><span class="pk ${cls}" title="${esc(t)}"><b>${pr.home_goals}-${pr.away_goals}</b>${pts ? `<i><span class="sr">, </span>${pts}<span class="sr"> points</span></i>` : ''}</span></td>`;
       }).join('');
-      return { p, tot, html: cells };
+      return { p, tot, live, html: cells };
     });
-    if (anyDone) rows.sort((a, b) => b.tot - a.tot || a.p.name.localeCompare(b.p.name));
-    rows.forEach((r, i) => { r.rank = anyDone ? (i && rows[i - 1].tot === r.tot ? rows[i - 1].rank : i + 1) : null; });
+    // While matches are live, order by points including the provisional live ones.
+    rows.forEach((r) => { r.proj = r.tot + r.live; });
+    if (anyDone) rows.sort((a, b) => b.proj - a.proj || a.p.name.localeCompare(b.p.name));
+    rows.forEach((r, i) => { r.rank = anyDone ? (i && rows[i - 1].proj === r.proj ? rows[i - 1].rank : i + 1) : null; });
 
     const head = six.map((f) => {
       let res, st;
       if (isDone(f)) { res = `${f.home_goals}-${f.away_goals}`; st = 'FT'; }
+      else if (isLive(f)) { res = `${f.home_goals}-${f.away_goals}`; st = '<span class="live">Live</span>'; }
       else if (f.status === 'IN_PLAY') { res = '<span class="live">Live</span>'; st = ''; }
       else if (f.status === 'POSTPONED') { res = 'P-P'; st = 'Off'; }
       else { res = esc(hm(f.ko, LOCAL)); st = esc(fmt(f.ko, LOCAL, { weekday: 'short' })); }
-      const cls = isDone(f) ? ' ft' : '';
+      const cls = isDone(f) ? ' ft' : isLive(f) ? ' lv' : '';
       return `<th scope="col" class="mcol${cls}" title="${esc(f.home)} v ${esc(f.away)}, ${esc(whenText(f.ko))}"><span class="mh"><span class="ch">${crest(f.home, 20)}</span><span class="rs">${res}</span><span class="ca">${crest(f.away, 20)}</span></span><span class="ms">${st}</span><span class="sr">${esc(f.home)} v ${esc(f.away)}</span></th>`;
     }).join('');
     const body = rows.map((r) => {
       const me = S.me && r.p.id === S.me.id;
-      return `<tr class="${me ? 'me' : ''}"><th scope="row" class="pn"><span class="rk">${r.rank != null ? r.rank : ''}</span><span class="nm">${esc(r.p.name)}</span></th>${r.html}<td class="tot">${anyDone ? r.tot : ''}</td></tr>`;
+      return `<tr class="${me ? 'me' : ''}"><th scope="row" class="pn"><span class="rk">${r.rank != null ? r.rank : ''}</span><span class="nm">${esc(r.p.name)}</span></th>${r.html}<td class="tot">${anyDone ? `${r.proj}${r.live ? `<small class="livetag" title="Includes ${r.live} provisional point${r.live === 1 ? '' : 's'} from matches in play">live</small>` : ''}` : ''}</td></tr>`;
     }).join('');
 
     // One status line: results in and who leads, then your own points.
@@ -706,12 +738,13 @@ ${pageHead('Gameweeks', 'Points per week, and who took each one.')}
       const first = six[0].ko;
       status = first.getTime() > Date.now() ? `First kick-off ${esc(whenText(first))}.` : 'Under way. No results in yet.';
     } else {
-      const best = rows[0].tot;
-      const lead = rows.filter((r) => r.tot === best).map((r) => esc(r.p.name));
+      const best = rows[0].proj;
+      const lead = rows.filter((r) => r.proj === best).map((r) => esc(r.p.name));
       const allIn = done === six.length;
-      status = `${done} of ${six.length} results in. ${lead.join(', ')} ${allIn ? 'won it' : (lead.length > 1 ? 'lead' : 'leads')} with ${best}.`;
+      const nLive = six.filter(isLive).length;
+      status = `${done} of ${six.length} results in${nLive ? `, ${nLive} live` : ''}. ${lead.join(', ')} ${allIn ? 'won it' : (lead.length > 1 ? 'lead' : 'leads')} with ${best}${nLive ? ' if it stays like this' : ''}.`;
       const mineRow = S.me && rows.find((r) => r.p.id === S.me.id);
-      if (mineRow) status += ` You have ${mineRow.tot}.`;
+      if (mineRow) status += ` You have ${mineRow.proj}.`;
     }
     let lockNote;
     if (perMatch) lockNote = 'Other players’ picks show as each match kicks off.';
@@ -748,8 +781,8 @@ ${six.length ? `<div class="panel bleed">
       if (f.super6 && S.me) {
         const pr = d.predMap.get(S.me.id + ':' + f.id);
         if (pr) {
-          const pts = isDone(f) ? score_(pr, f) : null;
-          extra.push(`Your pick <b>${pr.home_goals}-${pr.away_goals}</b>${pts != null ? ' ' + ptsChip(pts) : ''}`);
+          const pts = ptsNow(pr, f);
+          extra.push(`Your pick <b>${pr.home_goals}-${pr.away_goals}</b>${pts != null ? ' ' + ptsChip(pts) + (isLive(f) ? ' <span class="livetag">live</span>' : '') : ''}`);
         } else if (!isLocked(f)) extra.push(`<a href="#/predict/${f.gw}">No pick yet. Add one</a>`);
       }
       return `<div class="fx${f.status === 'POSTPONED' ? ' dim' : ''}">
@@ -997,7 +1030,7 @@ ${pageHead('How it works', 'Six matches a week. Call the score.')}
       const locked = isLocked(f);
       const pr = S.me ? d.predMap.get(S.me.id + ':' + f.id) : null;
       const done = isDone(f);
-      const pts = done && pr ? score(pr.home_goals, pr.away_goals, f.home_goals, f.away_goals) : null;
+      const pts = ptsNow(pr, f);
       const teams = `<div class="match"><span class="team h"><span class="nm">${esc(f.home)}</span>${crest(f.home)}</span>${scoreHTML(f)}<span class="team a">${crest(f.away)}<span class="nm">${esc(f.away)}</span></span></div>`;
       if (editable && !locked) {
         const box = (side, v, team) => `<span class="step">
@@ -1017,7 +1050,7 @@ ${pageHead('How it works', 'Six matches a week. Call the score.')}
       let line = '';
       if (editable) {
         line = pr
-          ? `<span class="pick-l">Your pick</span><span class="pick">${pr.home_goals}-${pr.away_goals}</span>${pts != null ? ptsChip(pts) : (locked && !done ? '<span class="muted">Locked</span>' : '')}`
+          ? `<span class="pick-l">Your pick</span><span class="pick">${pr.home_goals}-${pr.away_goals}</span>${pts != null ? ptsChip(pts) + (isLive(f) ? '<span class="livetag">live</span>' : '') : (locked && !done ? '<span class="muted">Locked</span>' : '')}`
           : `<span class="muted">${locked ? 'No pick made' : 'No pick yet'}</span>`;
       } else if (locked && !done && f.status !== 'IN_PLAY') line = '<span class="muted">Locked</span>';
       return `<div class="prow${locked ? ' locked' : ''}">

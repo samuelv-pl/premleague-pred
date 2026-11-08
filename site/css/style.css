@@ -550,3 +550,13 @@ footer.foot p { margin: 0; }
 .blist li span:first-child { text-wrap: balance; }
 /* Entering picks reads best as one focused column, even on a wide screen. */
 .narrow { max-width: 860px; }
+
+/* ---------- live (in-play) ---------- */
+.livetag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 700; color: var(--live); background: color-mix(in srgb, var(--live) 12%, transparent); vertical-align: 2px; white-space: nowrap; }
+.league td.tot .livetag { display: block; margin: 2px auto 0; width: max-content; font-size: 11px; vertical-align: 0; }
+.picks td.tot .livetag { display: block; margin: 2px 0 0 auto; width: max-content; }
+.pk.prov { outline: 1.5px dashed var(--live); outline-offset: 1px; }
+.livedot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: var(--live); margin: 0 6px 1px 4px; vertical-align: 1px; }
+.score.live b { color: var(--live); border-color: var(--live); }
+.score.live b { font-size: 16px; font-weight: 800; }
+.mcol.lv .rs { color: var(--live); }
