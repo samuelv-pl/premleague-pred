@@ -31,10 +31,9 @@ A private league for one friend group, built around its own rules: the Super 6 s
 ## Capabilities and Constraints
 
 - Login is a league name plus password (the site turns `adam` into `adam@super6.league`). No email reset; Sam resets passwords in the Supabase dashboard.
-- Nothing is visible without a login. Other players' picks are visible only after the lock; bonus picks of others only when Sam makes them public.
+- Anyone with the link can view the site (table, gameweeks, fixtures, results, bonus, rules). Signing in, top right, adds the player's own picks on the Predictions tab and, for Sam, the Admin tab. Other players' picks are visible only after the lock; bonus picks of others only when Sam makes them public. Bonus picks cannot be edited on the site.
 - Scoring: exact score 5, correct goal difference 3, correct result 1. Season bonus up to 140. Ties break on total, then exact scores, then goal differences.
-- Built: login, change password, table, gameweeks (chart, weekly winners, picks grid), fixtures and results, bonus, rules.
-- Not built yet: entering predictions on the site, editing bonus picks, the admin screen.
+- Built: public view, sign in, change password, table, predictions entry with lock, gameweeks (chart, weekly winners, picks grid), fixtures and results, bonus (read only), rules, admin (choose the six with the Big 4 rule, override results, late picks, bonus answers, settings, active players).
 - Undecided: derby markers, renumbering fixtures, Sheet cutover date, late joiners.
 
 ## Brand Commitments

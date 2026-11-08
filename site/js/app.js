@@ -97,7 +97,7 @@
   const isDone = (f) => f.status === 'FINISHED' && f.home_goals != null && f.away_goals != null;
 
   // ---------------------------------------------------------------- data
-  const S = { session: null, me: null, data: null, loadedAt: null, error: null };
+  const S = { session: null, me: null, data: null, loadedAt: null, error: null, dirty: false };
 
   async function fetchAll(table, cols, order) {
     const out = [];
@@ -113,7 +113,7 @@
 
   async function loadData() {
     const [players, fixtures, preds, points, gwPoints, board, settings, slots, picks, actual, vbonus] = await Promise.all([
-      fetchAll('players', 'id,name,is_admin,active,auth_id', ['name']),
+      fetchAll('players', 'id,name,is_admin,active', ['name']),
       fetchAll('fixtures', 'id,gw,kickoff,home,away,super6,derby,status,home_goals,away_goals,result_source,updated_at', ['id']),
       fetchAll('predictions', 'player_id,fixture_id,home_goals,away_goals', ['fixture_id', 'player_id']),
       fetchAll('v_points', 'player_id,gw,fixture_id,pts', ['fixture_id', 'player_id']),
@@ -159,45 +159,50 @@
   }
 
   // ---------------------------------------------------------------- auth
+  // Anyone can view. Signing in adds your own picks and, for the admin, the admin tab.
   async function boot() {
     const { data } = await sb.auth.getSession();
     S.session = data.session;
     sb.auth.onAuthStateChange((evt, session) => {
       const had = !!S.session;
       S.session = session;
-      if (evt === 'SIGNED_OUT' || (!session && had)) { S.me = null; S.data = null; render(); }
+      if (evt === 'SIGNED_OUT' || (!session && had)) { S.me = null; refresh(false); }
     });
-    if (S.session) await refresh(true); else render();
+    await refresh(true);
     window.addEventListener('hashchange', () => { hideTip(); render(); window.scrollTo(0, 0); });
     setInterval(() => {
-      if (S.session && document.visibilityState === 'visible' && !busyForm()) refresh(false);
+      if (document.visibilityState === 'visible' && !busyForm()) refresh(false);
     }, 60000);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && S.session && S.loadedAt && Date.now() - S.loadedAt > 60000 && !busyForm()) refresh(false);
+      if (document.visibilityState === 'visible' && S.loadedAt && Date.now() - S.loadedAt > 60000 && !busyForm()) refresh(false);
     });
   }
-  const busyForm = () => !!document.activeElement && document.activeElement.tagName === 'INPUT';
+  // Do not redraw under someone who is typing or has unsaved picks.
+  const busyForm = () => (!!document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) || S.dirty;
 
   async function refresh(first) {
-    if (first) app.innerHTML = '<div class="boot">Loading the league…</div>';
+    if (first && !S.data) app.innerHTML = '<div class="boot">Loading the league…</div>';
     try {
-      S.data = await loadData();
-      S.loadedAt = Date.now();
-      S.error = null;
-      const uid = S.session && S.session.user && S.session.user.id;
-      S.me = S.data.players.find((p) => p.auth_id && p.auth_id === uid) || null;
+      const data = await loadData();
+      let me = null;
+      if (S.session) {
+        const r = await sb.rpc('current_player');
+        if (r.error && /JWT|token|expired/i.test(r.error.message)) { await sb.auth.signOut(); return; }
+        me = data.players.find((p) => p.id === r.data) || null;
+      }
+      S.data = data; S.me = me; S.loadedAt = Date.now(); S.error = null;
     } catch (e) {
       S.error = e.message || String(e);
-      if (/JWT|token|auth/i.test(S.error) && first) { await sb.auth.signOut(); return; }
     }
     render();
   }
 
   // ---------------------------------------------------------------- shell
-  const TABS = [
-    ['table', 'Table'], ['gameweeks', 'Gameweeks'], ['fixtures', 'Fixtures'],
-    ['bonus', 'Bonus'], ['rules', 'Rules'], ['account', 'Account'],
-  ];
+  function tabs() {
+    const t = [['table', 'Table'], ['predict', 'Predictions'], ['gameweeks', 'Gameweeks'], ['fixtures', 'Fixtures'], ['bonus', 'Bonus'], ['rules', 'Rules']];
+    if (S.me && S.me.is_admin) t.push(['admin', 'Admin']);
+    return t;
+  }
   function route() {
     const parts = (location.hash.replace(/^#\/?/, '') || 'table').split('/');
     return { name: parts[0], arg: parts[1] };
@@ -205,45 +210,55 @@
 
   function render() {
     hideTip();
-    if (!S.session) { renderLogin(); return; }
     if (!S.data) {
-      app.innerHTML = S.error ? shell('', `<div class="notice err">Could not load the league: ${esc(S.error)} <button class="linkbtn" data-act="retry">Try again</button></div>`) : '<div class="boot">Loading the league…</div>';
+      app.innerHTML = shell('', S.error
+        ? `<div class="notice err"><span>Could not load the league (${esc(S.error)}).${S.session ? '' : ' If this keeps happening, the public view may not be switched on yet.'}</span><button class="btn quiet sm" data-act="retry">Try again</button></div>`
+        : '<div class="boot">Loading the league…</div>');
       bind();
       return;
     }
     const r = route();
     let body;
     switch (r.name) {
+      case 'predict': body = viewPredict(r.arg ? parseInt(r.arg, 10) : openGw()); break;
       case 'gameweeks': body = viewGameweeks(); break;
       case 'gw': body = viewGw(parseInt(r.arg, 10)); break;
       case 'fixtures': body = viewFixtures(r.arg ? parseInt(r.arg, 10) : S.data.currentGw); break;
       case 'bonus': body = viewBonus(); break;
       case 'rules': body = viewRules(); break;
-      case 'account': body = viewAccount(); break;
+      case 'login': body = S.session ? viewAccount() : viewLogin(); break;
+      case 'account': body = S.session ? viewAccount() : viewLogin(); break;
+      case 'admin': body = S.me && S.me.is_admin ? viewAdmin(r.arg ? parseInt(r.arg, 10) : openGw()) : viewTable(); break;
       default: body = viewTable();
     }
-    const active = r.name === 'gw' ? 'gameweeks' : (TABS.some((t) => t[0] === r.name) ? r.name : 'table');
+    const map = { gw: 'gameweeks' };
+    const active = map[r.name] || r.name;
     app.innerHTML = shell(active, body);
     bind();
     if (r.name === 'gameweeks') bindChart();
+    if (r.name === 'predict') bindPredict();
+    if (r.name === 'admin') bindAdmin();
+    if ((r.name === 'login' || r.name === 'account') && !S.session) bindLogin();
   }
 
   function shell(active, body) {
     const d = S.data;
-    const name = S.me ? S.me.name : (S.session.user.email || '').split('@')[0];
     const warn = [];
-    if (S.error) warn.push(`<div class="notice err"><span>The last refresh failed (${esc(S.error)}). You are looking at the data from before.</span><button class="btn quiet sm" data-act="retry">Try again</button></div>`);
-    if (S.data && !S.me) warn.push('<div class="notice err">Your login is not linked to a player yet. Ask Sam to check that your player email matches your login.</div>');
-    if (S.me && store.get('s6.pw.' + S.me.id, '') !== 'done' && route().name !== 'account') {
+    if (S.error && S.data) warn.push(`<div class="notice err"><span>The last refresh failed (${esc(S.error)}). You are looking at the data from before.</span><button class="btn quiet sm" data-act="retry">Try again</button></div>`);
+    if (S.session && S.data && !S.me) warn.push('<div class="notice err">Your login is not linked to a player yet. Ask Sam to check that your player email matches your login.</div>');
+    if (S.me && store.get('s6.pw.' + S.me.id, '') !== 'done' && !['account', 'login'].includes(route().name)) {
       warn.push(`<div class="notice"><span>Still on the starter password Sam gave you? Set your own so nobody else can sign in as you.</span><span class="acts"><a class="btn sm" href="#/account">Change password</a><button class="linkbtn small" data-act="pw-dismiss">Not now</button></span></div>`);
     }
+    const right = S.session
+      ? `<a class="who" href="#/account"${active === 'account' ? ' aria-current="page"' : ''}>${esc(S.me ? S.me.name : 'Account')}</a>`
+      : `<a class="btn quiet sm" href="#/login">Sign in</a>`;
     return `
 <header class="top"><div class="wrap">
   <div class="bar">
     <a class="brand" href="#/table">Super 6<span>${d ? `GW${d.currentGw}` : ''}</span></a>
-    <a class="who" href="#/account">${esc(name)}</a>
+    ${right}
   </div>
-  <nav class="tabs" aria-label="Sections">${TABS.map(([k, l]) => `<a href="#/${k}"${k === active ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
+  <nav class="tabs" aria-label="Sections">${tabs().map(([k, l]) => `<a href="#/${k}"${k === active ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
 </div></header>
 <main><div class="wrap">${warn.join('')}${body}</div></main>
 <footer class="foot"><div class="wrap"><p>RTFM Mods · ${esc(CFG.season)}. Updated ${S.loadedAt ? esc(hm(new Date(S.loadedAt), LOCAL)) : '-'} your time. Results come from football-data.org and can arrive a few minutes late. This page refreshes every minute.</p></div></footer>`;
@@ -258,11 +273,12 @@
         if (act === 'pw-dismiss') { ev.preventDefault(); if (S.me) store.set('s6.pw.' + S.me.id, 'done'); render(); }
         if (act === 'tm') { store.set('s6.timeMode', el.getAttribute('data-v')); render(); }
         if (act === 's6only') { store.set('s6.s6only', el.checked ? '1' : '0'); render(); }
-        if (act === 'signout') { ev.preventDefault(); sb.auth.signOut(); location.hash = ''; }
+        if (act === 'signout') { ev.preventDefault(); S.dirty = false; location.hash = '#/table'; sb.auth.signOut(); }
       });
     });
-    const gwSel = app.querySelector('select[data-gw]');
-    if (gwSel) gwSel.addEventListener('change', () => { location.hash = '#/' + gwSel.getAttribute('data-gw') + '/' + gwSel.value; });
+    app.querySelectorAll('select[data-gw]').forEach((gwSel) => {
+      gwSel.addEventListener('change', () => { location.hash = '#/' + gwSel.getAttribute('data-gw') + '/' + gwSel.value; });
+    });
     const chartSel = app.querySelector('select[data-chart-player]');
     if (chartSel) chartSel.addEventListener('change', () => { store.set('s6.chartPlayer', chartSel.value); render(); });
     const pw = app.querySelector('form[data-act="password"]');
@@ -270,20 +286,23 @@
   }
 
   // ---------------------------------------------------------------- login
-  function renderLogin() {
-    app.innerHTML = `
+  function viewLogin() {
+    return `
 <div class="login">
-  <h1 class="brand">Super 6</h1>
-  <p class="lede">The RTFM Mods prediction league, ${esc(CFG.season)}. Sign in with your league name.</p>
+  <h1>Sign in</h1>
+  <p class="lede">Sign in with your league name to enter your picks. Everything else is open to view.</p>
   <form class="form" id="loginForm" novalidate>
-    <label>Name<input name="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required placeholder="e.g. adam"></label>
+    <label>Name<input name="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required placeholder="adam"></label>
     <label>Password<input name="p" type="password" autocomplete="current-password" required></label>
     <p class="err" id="loginErr" role="alert"></p>
     <button class="btn" type="submit">Sign in</button>
   </form>
   <p class="note">Forgotten your password? Ask Sam to reset it.</p>
 </div>`;
+  }
+  function bindLogin() {
     const form = document.getElementById('loginForm');
+    if (!form) return;
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const u = form.u.value.trim().toLowerCase().replace(/@.*$/, '');
@@ -300,10 +319,10 @@
         return;
       }
       S.session = data.session;
-      if (!location.hash || location.hash === '#/') location.hash = '#/table';
-      await refresh(true);
+      await refresh(false);
+      location.hash = '#/predict';
     });
-    form.u.focus();
+    if (window.innerWidth > 640) form.u.focus();
   }
 
   // ---------------------------------------------------------------- table
@@ -621,7 +640,6 @@ ${rows || '<p class="note">No matches.</p>'}`;
   function viewBonus() {
     const d = S.data;
     const isPublic = d.set.bonus_public === 'true';
-    const open = d.set.bonus_open === 'true';
     const groups = [];
     d.slots.forEach((s) => {
       let g = groups.find((x) => x.key === s.group_key);
@@ -670,12 +688,13 @@ ${rows || '<p class="note">No matches.</p>'}`;
     let vis;
     if (isPublic) vis = 'Everyone’s picks are on show. Your picks have a heavier border.';
     else if (visible.size > 1) vis = 'Showing the picks you are allowed to see.';
-    else vis = 'Only your own picks are shown. Sam will reveal everyone’s picks later in the season.';
+    else if (S.me) vis = 'Only your own picks are shown. Sam will reveal everyone’s picks later in the season.';
+    else vis = 'The picks are hidden until Sam reveals them later in the season.';
 
     return `
 <div class="head"><div><h1>Season bonus</h1>
 <p class="lede">Up to ${max} extra points, settled as the season’s awards are decided. They go straight into the Bonus column of the table.</p></div></div>
-<p class="note">${vis} ${open ? '' : 'Bonus picks are closed.'} A correct pick turns purple with a tick.</p>
+<p class="note">${vis} Picks were made before the season and can no longer be changed. A correct pick turns purple with a tick.</p>
 <h2>Bonus points so far</h2>
 <table class="btable"><thead><tr><th class="l">Player</th><th>Correct</th><th>Points</th></tr></thead><tbody>${totals}</tbody></table>
 <h2>The picks</h2>
@@ -713,6 +732,331 @@ ${sections}`;
 <h2>Times</h2>
 <p>Kick-offs show in your own time zone with UK time alongside. Gameweeks are listed by UK matchday.</p>
 </div>`;
+  }
+
+  // ---------------------------------------------------------------- predictions
+  // The first gameweek still open for picks.
+  function openGw() {
+    const now = Date.now();
+    for (let gw = 1; gw <= 38; gw++) {
+      const six = S.data.fixtures.filter((f) => f.gw === gw && f.super6);
+      if (six.length && six.some((f) => !isLocked(f) && f.ko.getTime() > now)) return gw;
+    }
+    return S.data.currentGw;
+  }
+
+  function untilText(d) {
+    const ms = d.getTime() - Date.now();
+    if (ms <= 0) return '';
+    const h = Math.floor(ms / 3600e3), m = Math.floor((ms % 3600e3) / 60e3);
+    if (h >= 48) return `in ${Math.floor(h / 24)} days`;
+    if (h >= 1) return `in ${h} h ${m} min`;
+    return `in ${m} min`;
+  }
+
+  function gwStepper(kind, gw) {
+    const prev = gw > 1 ? `<a href="#/${kind}/${gw - 1}" aria-label="Previous gameweek">${ICON.prev}</a>` : `<span class="dis">${ICON.prev}</span>`;
+    const next = gw < 38 ? `<a href="#/${kind}/${gw + 1}" aria-label="Next gameweek">${ICON.next}</a>` : `<span class="dis">${ICON.next}</span>`;
+    const sel = Array.from({ length: 38 }, (_, i) => `<option value="${i + 1}"${i + 1 === gw ? ' selected' : ''}>GW${i + 1}</option>`).join('');
+    return `<div class="stepper">${prev}<select class="sel" data-gw="${kind}" aria-label="Choose gameweek">${sel}</select>${next}</div>`;
+  }
+
+  function viewPredict(gw) {
+    const d = S.data;
+    if (!(gw >= 1 && gw <= 38)) gw = openGw();
+    const six = d.fixtures.filter((f) => f.gw === gw && f.super6).sort((a, b) => a.ko - b.ko || a.id - b.id);
+    const lock = lockTime(gw);
+    const perMatch = d.set.lock_mode === 'per_match';
+    const allLocked = six.length && six.every(isLocked);
+    let lede;
+    if (!six.length) lede = 'The six for this week have not been picked yet.';
+    else if (allLocked) lede = `Picks for this week are locked. <a href="#/gw/${gw}">See everyone's picks</a>.`;
+    else if (perMatch) lede = 'Each pick locks at its own kick-off.';
+    else lede = `Picks lock ${esc(untilText(lock))}, at the first Super 6 kick-off: ${esc(whenText(lock))}.`;
+
+    const editable = !!S.me;
+    const rows = six.map((f) => {
+      const locked = isLocked(f);
+      const pr = S.me ? d.predMap.get(S.me.id + ':' + f.id) : null;
+      const done = isDone(f);
+      const pts = done && pr ? score(pr.home_goals, pr.away_goals, f.home_goals, f.away_goals) : null;
+      let mid;
+      if (editable && !locked) {
+        mid = `<input class="goal" type="number" inputmode="numeric" min="0" max="20" step="1" data-fid="${f.id}" data-side="h" value="${pr ? pr.home_goals : ''}" aria-label="${esc(f.home)} goals">
+          <span class="dash">-</span>
+          <input class="goal" type="number" inputmode="numeric" min="0" max="20" step="1" data-fid="${f.id}" data-side="a" value="${pr ? pr.away_goals : ''}" aria-label="${esc(f.away)} goals">`;
+      } else if (editable) {
+        mid = `<span class="pick">${pr ? `${pr.home_goals}-${pr.away_goals}` : '<span class="muted">none</span>'}</span>`;
+      } else {
+        mid = '<span class="score v">v</span>';
+      }
+      const extra = [];
+      if (done) extra.push(`Full time ${f.home_goals}-${f.away_goals}${pts != null ? ` · ${pts} pt${pts === 1 ? '' : 's'}` : ''}`);
+      else if (f.status === 'IN_PLAY') extra.push('<span class="live">Live</span>');
+      else if (f.status === 'POSTPONED') extra.push('Postponed');
+      else if (editable && locked) extra.push('Locked');
+      return `<div class="prow${locked ? ' locked' : ''}">
+        <div class="time">${timeHTML(f.ko)}</div>
+        <div class="match"><span class="h">${esc(f.home)}</span><span class="mid">${mid}</span><span class="a">${esc(f.away)}</span></div>
+        ${extra.length ? `<div class="extra">${extra.join(' · ')}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    let foot = '';
+    if (!S.session) {
+      foot = `<div class="notice"><span>Sign in to enter your picks. Other players' picks show here once the week locks.</span><a class="btn sm" href="#/login">Sign in</a></div>`;
+    } else if (S.me && six.some((f) => !isLocked(f))) {
+      foot = `<div class="savebar"><button class="btn" type="submit">Save picks</button><span class="msg" id="predMsg" role="status"></span></div>
+<p class="note">Leave both boxes empty to remove a pick. You can change your picks as often as you like until the lock.</p>`;
+    }
+    return `
+<div class="head"><div><h1>Predictions</h1><p class="lede">Gameweek ${gw}. ${lede}</p></div>${gwStepper('predict', gw)}</div>
+${!S.session ? foot : ''}
+<form id="predForm" novalidate>${rows || ''}${S.session ? foot : ''}</form>`;
+  }
+
+  function bindPredict() {
+    const form = document.getElementById('predForm');
+    if (!form || !S.me) return;
+    const msg = document.getElementById('predMsg');
+    form.addEventListener('input', () => { S.dirty = true; if (msg) { msg.className = 'msg'; msg.textContent = 'Not saved yet'; } });
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const ups = [], dels = [];
+      const byFid = {};
+      form.querySelectorAll('input.goal').forEach((i) => { (byFid[i.dataset.fid] = byFid[i.dataset.fid] || {})[i.dataset.side] = i.value.trim(); });
+      for (const fid of Object.keys(byFid)) {
+        const { h, a } = byFid[fid];
+        const f = S.data.fixtures.find((x) => x.id === +fid);
+        if (h === '' && a === '') { if (S.data.predMap.get(S.me.id + ':' + fid)) dels.push(+fid); continue; }
+        const hn = Number(h), an = Number(a);
+        if (h === '' || a === '' || !Number.isInteger(hn) || !Number.isInteger(an) || hn < 0 || an < 0 || hn > 20 || an > 20) {
+          msg.className = 'msg err'; msg.textContent = `Check ${f.home} v ${f.away}: both scores need a whole number from 0 to 20.`; return;
+        }
+        ups.push({ player_id: S.me.id, fixture_id: +fid, home_goals: hn, away_goals: an });
+      }
+      const btn = form.querySelector('button[type=submit]');
+      btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Saving…';
+      let error = null;
+      if (ups.length) ({ error } = await sb.from('predictions').upsert(ups, { onConflict: 'player_id,fixture_id' }));
+      if (!error && dels.length) ({ error } = await sb.from('predictions').delete().eq('player_id', S.me.id).in('fixture_id', dels));
+      btn.disabled = false;
+      if (error) {
+        msg.className = 'msg err';
+        msg.textContent = /row-level security|policy/i.test(error.message) ? 'Not saved: this week has locked.' : 'Not saved: ' + error.message;
+        return;
+      }
+      S.dirty = false;
+      await refresh(false);
+      const m2 = document.getElementById('predMsg');
+      if (m2) { m2.className = 'msg ok'; m2.textContent = `Saved at ${hm(new Date(), LOCAL)}.`; }
+    });
+  }
+  window.addEventListener('beforeunload', (ev) => { if (S.dirty) { ev.preventDefault(); ev.returnValue = ''; } });
+
+  // ---------------------------------------------------------------- admin
+  const BIG4 = ['Arsenal', 'Chelsea', 'Man City', 'Man United'];
+
+  function viewAdmin(gw) {
+    const d = S.data;
+    if (!(gw >= 1 && gw <= 38)) gw = openGw();
+    const all = d.fixtures.filter((f) => f.gw === gw).sort((a, b) => a.ko - b.ko || a.id - b.id);
+    const six = all.filter((f) => f.super6);
+    const lock = lockTime(gw);
+    const sixLocked = lock && Date.now() >= lock.getTime();
+
+    const pickRows = all.map((f) => `<label class="arow">
+      <input type="checkbox" name="s6" value="${f.id}"${f.super6 ? ' checked' : ''}${sixLocked ? ' disabled' : ''}>
+      <span class="atime">${esc(shortDay(f.ko, UK))} ${esc(hm(f.ko, UK))} UK</span>
+      <span class="ateams">${esc(f.home)} v ${esc(f.away)}</span>
+    </label>`).join('');
+
+    const resRows = all.map((f) => `<div class="arow res" data-fid="${f.id}">
+      <span class="ateams">${esc(f.home)} v ${esc(f.away)}<small>${esc(f.status === 'FINISHED' ? 'Full time' : f.status === 'IN_PLAY' ? 'Live' : f.status === 'POSTPONED' ? 'Postponed' : 'Not played')}${f.result_source === 'admin' ? ' · set by admin' : ''}</small></span>
+      <span class="ains"><input class="goal sm" type="number" inputmode="numeric" min="0" max="30" data-side="h" value="${f.home_goals != null ? f.home_goals : ''}" aria-label="${esc(f.home)} goals"><span class="dash">-</span><input class="goal sm" type="number" inputmode="numeric" min="0" max="30" data-side="a" value="${f.away_goals != null ? f.away_goals : ''}" aria-label="${esc(f.away)} goals"></span>
+      <span class="abtns"><button class="btn quiet sm" type="button" data-res="set">Set full time</button>${f.result_source === 'admin' ? '<button class="linkbtn small" type="button" data-res="feed">Hand back to feed</button>' : ''}</span>
+    </div>`).join('');
+
+    const players = d.players.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const activePlayers = players.filter((p) => p.active);
+    const groups = [];
+    d.slots.forEach((s) => { if (!groups.some((g) => g.key === s.group_key)) groups.push({ key: s.group_key, label: s.label }); });
+    const actual = Object.fromEntries(d.actual.map((a) => [a.group_key, a.accepted || []]));
+
+    return `
+<div class="head"><div><h1>Admin</h1><p class="lede">Only you can see this tab. Changes go live for everyone straight away.</p></div>${gwStepper('admin', gw)}</div>
+
+<form class="aform" id="fSix" novalidate>
+  <h2>The six for GW${gw}</h2>
+  <p class="note">${sixLocked ? 'This week has locked, so the six can no longer change here.' : 'Pick exactly six. Arsenal, Chelsea, Man City and Man United must each be in one of them.'}</p>
+  <div class="alist">${pickRows || '<p class="note">No fixtures.</p>'}</div>
+  ${sixLocked ? '' : '<div class="savebar"><button class="btn" type="submit">Save the six</button><span class="msg" role="status"></span></div>'}
+</form>
+
+<form class="aform" id="fRes" novalidate>
+  <h2>Results for GW${gw}</h2>
+  <p class="note">Use this when the feed is late or wrong. A result you set is never overwritten by the feed until you hand it back.</p>
+  <div class="alist">${resRows}</div>
+  <span class="msg" role="status"></span>
+</form>
+
+<form class="aform" id="fLate" novalidate>
+  <h2>Late pick</h2>
+  <p class="note">Enter a pick for someone who missed the deadline. Works before or after the lock and replaces any pick they already have for that match.</p>
+  <div class="agrid">
+    <label>Player<select class="sel" name="pid">${activePlayers.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label>
+    <label>Match<select class="sel" name="fid">${six.map((f) => `<option value="${f.id}">${esc(f.home)} v ${esc(f.away)}</option>`).join('')}</select></label>
+    <label>Score<span class="ains"><input class="goal sm" type="number" inputmode="numeric" min="0" max="20" name="h" aria-label="Home goals"><span class="dash">-</span><input class="goal sm" type="number" inputmode="numeric" min="0" max="20" name="a" aria-label="Away goals"></span></label>
+  </div>
+  <div class="savebar"><button class="btn" type="submit"${six.length ? '' : ' disabled'}>Save pick</button><span class="msg" role="status"></span></div>
+</form>
+
+<form class="aform" id="fBonus" novalidate>
+  <h2>Season bonus answers</h2>
+  <p class="note">Fill these in as the awards are settled. List every spelling that should count, separated by commas (for example: Bruno F, Bruno F., Bruno Fernandes). For Top 4 and Bottom 3 list the clubs. Matching ignores capitals and spaces at the ends.</p>
+  <div class="alist">${groups.map((g) => `<label class="bfield">${esc(g.label)}<input type="text" name="${esc(g.key)}" value="${esc((actual[g.key] || []).join(', '))}" autocomplete="off"></label>`).join('')}</div>
+  <div class="savebar"><button class="btn" type="submit">Save answers</button><span class="msg" role="status"></span></div>
+</form>
+
+<form class="aform" id="fSet" novalidate>
+  <h2>Settings</h2>
+  <div class="alist">
+    <label class="bfield">When picks lock<select class="sel" name="lock_mode">
+      <option value="first_super6"${d.set.lock_mode !== 'per_match' ? ' selected' : ''}>All six at the first Super 6 kick-off</option>
+      <option value="per_match"${d.set.lock_mode === 'per_match' ? ' selected' : ''}>Each match at its own kick-off</option>
+    </select></label>
+    <label class="check"><input type="checkbox" name="bonus_public"${d.set.bonus_public === 'true' ? ' checked' : ''}> Show everyone's bonus picks on the Bonus tab</label>
+  </div>
+  <div class="savebar"><button class="btn" type="submit">Save settings</button><span class="msg" role="status"></span></div>
+</form>
+
+<form class="aform" id="fPlayers" novalidate>
+  <h2>Players</h2>
+  <p class="note">Untick someone to take them off the table. Their picks are kept. New logins and password resets are done in Supabase (Authentication, Users).</p>
+  <div class="alist">${players.map((p) => `<label class="check"><input type="checkbox" name="active" value="${esc(p.id)}"${p.active ? ' checked' : ''}${S.me && p.id === S.me.id ? ' disabled' : ''}> ${esc(p.name)}${p.is_admin ? ' <span class="muted small">admin</span>' : ''}</label>`).join('')}</div>
+  <div class="savebar"><button class="btn" type="submit">Save players</button><span class="msg" role="status"></span></div>
+</form>`;
+  }
+
+  // Run one admin save: lock the button, show the outcome, reload the data.
+  async function adminRun(form, fn) {
+    const msg = form.querySelector('.msg');
+    const btns = form.querySelectorAll('button');
+    btns.forEach((b) => { b.disabled = true; });
+    msg.className = 'msg'; msg.textContent = 'Saving…';
+    let err = null;
+    try { err = await fn(); } catch (e) { err = e.message || String(e); }
+    btns.forEach((b) => { b.disabled = false; });
+    if (err === 'Cancelled.') { msg.className = 'msg'; msg.textContent = 'Not saved.'; return; }
+    if (err) { msg.className = 'msg err'; msg.textContent = err; return; }
+    const id = form.id;
+    S.dirty = false;
+    await refresh(false);
+    const m2 = document.querySelector('#' + id + ' .msg');
+    if (m2) { m2.className = 'msg ok'; m2.textContent = 'Saved.'; }
+  }
+  const dbErr = (r) => (r && r.error ? r.error.message : null);
+
+  function bindAdmin() {
+    const d = S.data;
+    const gw = parseInt(route().arg, 10) || openGw();
+    app.querySelectorAll('form.aform').forEach((f) => f.addEventListener('input', () => { S.dirty = true; }));
+
+    const fSix = document.getElementById('fSix');
+    fSix.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      adminRun(fSix, async () => {
+        const chosen = new Set(Array.from(fSix.querySelectorAll('input[name=s6]:checked')).map((i) => +i.value));
+        if (chosen.size !== 6) return `Pick exactly six. You have ${chosen.size}.`;
+        const week = d.fixtures.filter((f) => f.gw === gw);
+        const missing = BIG4.filter((club) => week.some((f) => f.home === club || f.away === club)
+          && !week.some((f) => chosen.has(f.id) && (f.home === club || f.away === club)));
+        if (missing.length) return `${missing.join(' and ')} must be in the six.`;
+        for (const f of week) {
+          if (f.super6 !== chosen.has(f.id)) {
+            const e = dbErr(await sb.from('fixtures').update({ super6: chosen.has(f.id) }).eq('id', f.id));
+            if (e) return e;
+          }
+        }
+        return null;
+      });
+    });
+
+    const fRes = document.getElementById('fRes');
+    fRes.addEventListener('submit', (ev) => ev.preventDefault());
+    fRes.querySelectorAll('button[data-res]').forEach((b) => b.addEventListener('click', () => {
+      const row = b.closest('.res');
+      const fid = +row.dataset.fid;
+      const f = d.fixtures.find((x) => x.id === fid);
+      adminRun(fRes, async () => {
+        if (b.dataset.res === 'feed') return dbErr(await sb.from('fixtures').update({ result_source: 'feed' }).eq('id', fid));
+        const h = row.querySelector('[data-side=h]').value.trim(), a = row.querySelector('[data-side=a]').value.trim();
+        const hn = Number(h), an = Number(a);
+        if (h === '' || a === '' || !Number.isInteger(hn) || !Number.isInteger(an) || hn < 0 || an < 0) return `Enter both scores for ${f.home} v ${f.away}.`;
+        if (!confirm(`Set ${f.home} ${hn}-${an} ${f.away} as the full-time result?`)) return 'Cancelled.';
+        return dbErr(await sb.from('fixtures').update({ home_goals: hn, away_goals: an, status: 'FINISHED', result_source: 'admin' }).eq('id', fid));
+      });
+    }));
+
+    const fLate = document.getElementById('fLate');
+    fLate.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      adminRun(fLate, async () => {
+        const h = fLate.h.value.trim(), a = fLate.a.value.trim();
+        const hn = Number(h), an = Number(a);
+        if (h === '' || a === '' || !Number.isInteger(hn) || !Number.isInteger(an) || hn < 0 || an < 0 || hn > 20 || an > 20) return 'Enter both scores (0 to 20).';
+        const p = d.byId[fLate.pid.value];
+        const f = d.fixtures.find((x) => x.id === +fLate.fid.value);
+        if (!confirm(`Save ${p.name}'s pick ${f.home} ${hn}-${an} ${f.away}? It replaces any pick they already have.`)) return 'Cancelled.';
+        return dbErr(await sb.rpc('admin_set_prediction', { pid: fLate.pid.value, fid: +fLate.fid.value, h: hn, a: an }));
+      });
+    });
+
+    const fBonus = document.getElementById('fBonus');
+    fBonus.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      adminRun(fBonus, async () => {
+        const ups = [], dels = [];
+        fBonus.querySelectorAll('input[type=text]').forEach((i) => {
+          const vals = i.value.split(',').map((x) => x.trim()).filter(Boolean);
+          if (vals.length) ups.push({ group_key: i.name, accepted: vals });
+          else if (d.actual.some((a) => a.group_key === i.name)) dels.push(i.name);
+        });
+        if (ups.length) { const e = dbErr(await sb.from('bonus_actual').upsert(ups, { onConflict: 'group_key' })); if (e) return e; }
+        if (dels.length) { const e = dbErr(await sb.from('bonus_actual').delete().in('group_key', dels)); if (e) return e; }
+        return null;
+      });
+    });
+
+    const fSet = document.getElementById('fSet');
+    fSet.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      adminRun(fSet, async () => {
+        const vals = { lock_mode: fSet.lock_mode.value, bonus_public: fSet.bonus_public.checked ? 'true' : 'false' };
+        for (const [key, value] of Object.entries(vals)) {
+          if (d.set[key] === value) continue;
+          const e = dbErr(await sb.from('settings').update({ value }).eq('key', key));
+          if (e) return e;
+        }
+        return null;
+      });
+    });
+
+    const fPlayers = document.getElementById('fPlayers');
+    fPlayers.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      adminRun(fPlayers, async () => {
+        const on = new Set(Array.from(fPlayers.querySelectorAll('input[name=active]:checked')).map((i) => i.value));
+        for (const p of d.players) {
+          if (S.me && p.id === S.me.id) continue;
+          if (p.active !== on.has(p.id)) {
+            const e = dbErr(await sb.from('players').update({ active: on.has(p.id) }).eq('id', p.id));
+            if (e) return e;
+          }
+        }
+        return null;
+      });
+    });
   }
 
   // ---------------------------------------------------------------- account

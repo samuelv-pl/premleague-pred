@@ -17,9 +17,19 @@ Website for the RTFM Mods Premier League 2026/27 Super 6 prediction league.
 
 From then on, every change pushed to `main` goes live by itself within a minute or so.
 
+## Open the site to everyone (view only)
+
+Run this once, so people can see the table without signing in:
+
+1. Supabase > **SQL Editor** > **New query**.
+2. Open `db/04_public_read.sql` here on GitHub, click the copy button (top right of the file), paste it into the query box and click **Run**.
+3. It should say "Success. No rows returned". Open the site in a private window: the table should show without signing in.
+
+It makes the table, fixtures, results, player names and picks after the lock readable by anyone with the link. Login emails stay hidden, and nobody can change anything without signing in.
+
 ## Two settings to check in Supabase
 
 1. **Sign-ups off:** Authentication > Sign In / Providers > turn off **Allow new users to sign up**. (Uninvited emails are blocked by the database anyway, but this closes the door properly.)
-2. **Logins exist:** Authentication > Users should list the nine `<name>@super6.league` users. Players sign in on the site with just their name (`adam`) and password.
+2. **Logins exist:** Authentication > Users should list the nine `<name>@super6.league` users. Players sign in on the site with just their name (`adam`) and password. When adding someone later, tick **Auto Confirm User**, because "Confirm email" is on and these addresses cannot receive mail.
 
 Forgotten passwords: Authentication > Users > the player > **Send password recovery** will not work (no real emails), so use the three dots > **Update user** and set a new password, then tell the player.
