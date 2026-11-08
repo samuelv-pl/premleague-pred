@@ -23,6 +23,7 @@
   --pink: #e90052;
   --rank-podium: #b80045;
   --bar: #37003c;
+  --track: #ece6f0;
   --head: #37003c;
   --up: #0a7a42;
   --down: #b4123f;
@@ -53,6 +54,7 @@
   --pink: #ff4d8a;
   --rank-podium: #ff7aa5;
   --bar: #c99ad2;
+  --track: #2d2634;
   --head: #2c0031;
   --up: #52d18f;
   --down: #ff7d9b;
@@ -455,7 +457,6 @@ img.crest { width: 28px; height: 28px; object-fit: contain; flex: none; }
 @media (max-width: 639px) { .league td.name { width: auto; } .league td.name .sub { white-space: normal; } }
 
 /* ---------- QA fixes ---------- */
-.league tr.me td { box-shadow: inset 0 -2px 0 var(--brand-ink); }
 .pday { padding: 12px 20px 8px; font-size: 14px; font-weight: 700; color: var(--ink-2); background: var(--sunk); border-bottom: 1px solid var(--line); }
 .pday:first-child { border-radius: var(--r-lg) var(--r-lg) 0 0; }
 .prow + .pday { border-top: 1px solid var(--line); }
@@ -465,3 +466,13 @@ label.check { min-height: 36px; }
 .picks thead th .crest.code { display: none; }
 .picks thead th .res small { display: block; font-size: 11px; font-weight: 600; color: var(--muted); }
 .aform .note, #predForm + .note { max-width: 66ch; }
+
+/* ---------- wrapping: balanced lines in every browser (Firefox ignores text-wrap: pretty) ---------- */
+.lede, .note, .notice > span:first-child, .gwlist .w, .fx .extra, .prow .extra, .bonus-row .ans,
+footer.foot p, .rules p, .pts-list li > span, .hero-top p, .summary .ln, .summary b, .msg, .rstat { text-wrap: balance; }
+.lede a, .note a, .notice a, .fx .extra a, .gwlist .w b, .summary .act, .chip .by { white-space: nowrap; }
+.summary p { display: grid; gap: 2px; }
+.summary p b { margin-bottom: 0; }
+.summary .act { justify-self: start; margin-top: 6px; font-size: 14px; }
+.summary .ln { display: block; }
+.league td.name .sub > span { white-space: nowrap; }

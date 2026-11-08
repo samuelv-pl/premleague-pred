@@ -412,10 +412,10 @@
   }
 
   function formSVG(vals) {
-    const W = 64, H = 22, bw = 9, gap = 4;
+    const W = 74, H = 22, bw = 11, gap = 4;
     const bars = vals.map((v, i) => {
-      const h = Math.max(2, Math.round((Math.min(v, 30) / 30) * H));
-      return `<rect x="${i * (bw + gap)}" y="${H - h}" width="${bw}" height="${h}" rx="2" fill="var(--bar)"><title>${v} pts</title></rect>`;
+      const h = Math.max(3, Math.round((Math.min(v, 30) / 30) * H));
+      return `<rect x="${i * (bw + gap)}" y="0" width="${bw}" height="${H}" rx="3" fill="var(--track)"/><rect x="${i * (bw + gap)}" y="${H - h}" width="${bw}" height="${h}" rx="3" fill="var(--bar)"><title>${v} pts</title></rect>`;
     }).join('');
     return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Last ${vals.length} gameweeks: ${vals.join(', ')} points">${bars}</svg>`;
   }
@@ -433,36 +433,39 @@
     const outstanding = cur ? cur.six.filter((f) => !isDone(f)).length : 0;
     const lockedSix = d.fixtures.filter((f) => f.super6 && isLocked(f)).length;
     const picks = {};
-    d.preds.forEach((p) => { const f = d.fixtures.find((x) => x.id === p.fixture_id); if (f && f.super6) picks[p.player_id] = (picks[p.player_id] || 0) + 1; });
+    d.preds.forEach((p) => { const f = d.fixtures.find((x) => x.id === p.fixture_id); if (f && f.super6 && isLocked(f)) picks[p.player_id] = (picks[p.player_id] || 0) + 1; });
 
-    // summary strip
+    // summary strip: a short title, one or two short detail lines, then the action on its own line
+    const line = (t) => `<span class="ln">${t}</span>`;
+    const act = (href, t) => `<a class="act" href="${href}">${t}</a>`;
     const lead = d.board[0], second = d.board[1];
     let leadLine = '';
     if (lead) {
       const gap = second ? lead.total - second.total : 0;
       const leaders = d.board.filter((b) => b.rank === 1).map((b) => b.name);
       leadLine = leaders.length > 1
-        ? `<b>${leaders.map(esc).join(' and ')}</b>Level at the top on ${lead.total} points.`
-        : `<b>${esc(lead.name)} leads on ${lead.total}</b>${gap ? `${gap} clear of ${esc(second.name)}.` : `Level with ${esc(second.name)} on points, ahead on the tie-break.`}`;
+        ? `<b>${leaders.map(esc).join(' and ')} lead</b>${line(`Level on ${lead.total} points`)}`
+        : `<b>${esc(lead.name)} leads</b>${line(`${lead.total} points, ${gap ? `${gap} clear of ${esc(second.name)}` : `ahead of ${esc(second.name)} on the tie-break`}`)}`;
     }
     let weekLine = '';
     if (cur && cur.six.length) {
       weekLine = cur.done
-        ? `<b>GW${cur.gw}: ${cur.done} of ${cur.six.length} in</b>${esc(cur.leaders.join(', '))} ${cur.complete ? 'won it' : (cur.leaders.length > 1 ? 'lead' : 'leads')} with ${cur.best}. <a href="#/gw/${cur.gw}">See the picks</a>`
-        : `<b>GW${cur.gw} starts ${esc(shortDay(cur.six.slice().sort((a, b) => a.ko - b.ko)[0].ko, LOCAL))}</b><a href="#/fixtures/${cur.gw}">See the fixtures</a>`;
+        ? `<b>GW${cur.gw}: ${cur.done} of ${cur.six.length} results in</b>${line(`${esc(cur.leaders.join(', '))} ${cur.complete ? 'won it' : (cur.leaders.length > 1 ? 'lead' : 'leads')} with ${cur.best}`)}${act(`#/gw/${cur.gw}`, 'See the picks')}`
+        : `<b>GW${cur.gw} starts ${esc(shortDay(cur.six.slice().sort((x, y) => x.ko - y.ko)[0].ko, LOCAL))}</b>${act(`#/fixtures/${cur.gw}`, 'See the fixtures')}`;
     }
     const dl = nextDeadline();
-    let dlLine = '<b>No open picks</b>The season is done.';
+    let dlLine = `<b>No open picks</b>${line('The season is done')}`;
     if (dl) {
-      const what = dl.fixture ? `${esc(dl.fixture.home)} v ${esc(dl.fixture.away)} locks` : `GW${dl.gw} picks lock`;
-      let cta;
-      if (!S.session) cta = '<a href="#/login">Sign in to pick</a>';
+      const what = dl.fixture ? `${esc(dl.fixture.home)} v ${esc(dl.fixture.away)}` : `GW${dl.gw} picks`;
+      const ukPart = localIsUK || sameClock(dl.at) ? '' : ` <span class="muted">(${esc(hm(dl.at, UK))} UK)</span>`;
+      let cta = '';
+      if (!S.session) cta = act('#/login', 'Sign in to pick');
       else if (S.me) {
         const six = d.fixtures.filter((f) => f.gw === dl.gw && f.super6);
         const mine = six.filter((f) => d.predMap.get(S.me.id + ':' + f.id)).length;
-        cta = `<a href="#/predict/${dl.gw}">${mine === six.length ? 'All six in. Review them' : `You have ${mine} of ${six.length}. Pick now`}</a>`;
-      } else cta = '';
-      dlLine = `<b>${what} ${esc(untilText(dl.at))}</b>${esc(whenText(dl.at))}. ${cta}`;
+        cta = act(`#/predict/${dl.gw}`, mine === six.length ? 'All six picked, review' : `${mine} of ${six.length} picked, pick now`);
+      }
+      dlLine = `<b>Next lock ${esc(untilText(dl.at))}</b>${line(what)}${line(`${esc(shortDay(dl.at, LOCAL))}, ${esc(hm(dl.at, LOCAL))}${ukPart}`)}${cta}`;
     }
 
     const rows = d.board.map((b) => {
@@ -479,7 +482,7 @@
       return `<tr class="${me ? 'me' : ''}${podium}">
         <td class="pos"><span class="rank">${b.rank}</span></td>
         <td class="mvc">${mv}</td>
-        <td class="l name">${esc(b.name)}${me ? '<span class="you">You</span>' : ''}<span class="sub">${b.exact} exact · ${b.gd} GD · ${b.outcome} result${b.outcome === 1 ? '' : 's'}${b.bonus ? ` · ${b.bonus} bonus` : ''}</span></td>
+        <td class="l name">${esc(b.name)}${me ? '<span class="you">You</span>' : ''}<span class="sub"><span>${b.exact} exact</span> · <span>${b.gd} GD</span> · <span>${b.outcome} result${b.outcome === 1 ? '' : 's'}</span>${b.bonus ? ` · <span>${b.bonus} bonus</span>` : ''}</span></td>
         <td class="wide">${b.exact}</td><td class="wide">${b.gd}</td><td class="wide">${b.outcome}</td>
         <td class="xwide">${b.match_pts}</td><td class="wide">${b.bonus}</td>
         <td class="xwide formc">${form.length ? formSVG(form) : ''}</td>
