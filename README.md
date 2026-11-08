@@ -27,6 +27,17 @@ Run this once, so people can see the table without signing in:
 
 It makes the table, fixtures, results, player names and picks after the lock readable by anyone with the link. Login emails stay hidden, and nobody can change anything without signing in.
 
+## Live scores: let Supabase fetch them every minute (one time, about 3 minutes)
+
+GitHub runs the scheduled sync late (about once an hour on a quiet repo), so Supabase does the fetching instead. Scores from the free football-data.org plan still run a few minutes behind the real game.
+
+1. Find your football-data.org API token: sign in at football-data.org, it is on your account page (it was also emailed to you when you registered).
+2. Supabase > **SQL Editor** > **New query**. Paste this line, replace `PASTE-TOKEN-HERE` with your token (keep the quotes), click **Run**:
+   `select vault.create_secret('PASTE-TOKEN-HERE', 'football_data_token');`
+   This stores the token encrypted in Supabase Vault. Do not paste the token anywhere else.
+3. **New query** again. Open `db/07_live_sync.sql` here on GitHub, copy it all, paste, click **Run**.
+4. Wait two minutes, then run `select last_status, last_applied_at from public.sync_state;` It should say `ok, ... changed` with a recent time. The site footer then shows "scores last checked" with that time.
+
 ## Two settings to check in Supabase
 
 1. **Sign-ups off:** Authentication > Sign In / Providers > turn off **Allow new users to sign up**. (Uninvited emails are blocked by the database anyway, but this closes the door properly.)

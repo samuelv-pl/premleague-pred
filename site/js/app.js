@@ -186,10 +186,16 @@
     // Picks made per player, counted like the old Sheet (db/06). Optional: older databases lack the view.
     let pickCounts = null;
     try { pickCounts = await fetchAll('v_pick_counts', 'player_id,made,total', ['player_id']); } catch (e) { pickCounts = null; }
+    // When scores were last fetched by the Supabase timer (db/07). Optional.
+    let syncedAt = null;
+    try {
+      const r = await sb.from('sync_state').select('last_applied_at').limit(1);
+      if (!r.error && r.data && r.data[0] && r.data[0].last_applied_at) syncedAt = new Date(r.data[0].last_applied_at);
+    } catch (e) { syncedAt = null; }
     const set = Object.fromEntries(settings.map((r) => [r.key, r.value]));
     const byId = Object.fromEntries(players.map((p) => [p.id, p]));
     const predMap = new Map(preds.map((p) => [p.player_id + ':' + p.fixture_id, p]));
-    const d = { players, byId, fixtures, preds, predMap, points, gwPoints, board, set, slots, picks, actual, vbonus, pickCounts };
+    const d = { players, byId, fixtures, preds, predMap, points, gwPoints, board, set, slots, picks, actual, vbonus, pickCounts, syncedAt };
     d.currentGw = currentGw(fixtures);
     return d;
   }
@@ -332,7 +338,7 @@
   <nav class="tabs" aria-label="Sections">${tabs().map(([k, l]) => `<a href="#/${k}"${k === active ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
 </div></header>
 <main><div class="wrap">${warn.join('')}${body}</div></main>
-<footer class="foot"><div class="wrap"><p>RTFM Mods · ${esc(CFG.season)}. Updated ${S.loadedAt ? esc(hm(new Date(S.loadedAt), LOCAL)) : '-'}. Results come from football-data.org and can arrive a few minutes late. This page refreshes every minute.</p></div></footer>`;
+<footer class="foot"><div class="wrap"><p>RTFM Mods · ${esc(CFG.season)}. Updated ${S.loadedAt ? esc(hm(new Date(S.loadedAt), LOCAL)) : '-'}${S.data && S.data.syncedAt ? `, scores last checked ${esc(hm(S.data.syncedAt, LOCAL))}` : ''}. Scores come from football-data.org and run a few minutes behind the real game. This page refreshes every minute during matches.</p></div></footer>`;
   }
 
   function bind() {

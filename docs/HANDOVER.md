@@ -2,6 +2,8 @@
 
 > Update 8 Nov 2026: Milestone 1 is built in `site/` (login, change password, table, gameweeks, fixtures and results, bonus, rules). Hosting moved from GitHub Pages to **Netlify** (free tier, publishes `site/`, see `netlify.toml` and the README). supabase-js 2.49.4 is bundled in `site/js/vendor/` instead of loaded from a CDN. Supabase Auth still reports sign-ups as enabled; the `handle_new_user` trigger blocks uninvited emails, but switch sign-ups off anyway.
 >
+> Update 3 (8 Nov 2026): picks lock per match (`lock_mode = per_match`). `db/06` makes Last 5 and the picks count follow the Sheet exactly (Sam ran it). `db/07` moves fetching into Supabase (pg_cron every minute, pg_net to football-data, token in Vault as `football_data_token`): every minute around matches, every 30 minutes otherwise; GitHub's scheduled runs were arriving about hourly. The GitHub job stays as a backup and now stores in-play scores too. In-play scores show on the site as provisional and never score.
+>
 > Update 2 (8 Nov 2026): Sam turned sign-ups off and created the nine users. The site is now public to view (`db/04_public_read.sql` grants read access to `anon`, picks only after the lock, emails hidden by column grants). Signing in adds the Predictions entry form and, for admins, the Admin tab. Bonus picks are read only (`bonus_open` set to false). The security tests in section 9 step 3 were run against a local copy of the schema with Supabase-style grants and all passed; repeat them on the live project with two real logins.
 
 Written 8 Nov 2026 from the chat session that designed and started the build. Read this top to bottom before touching anything. Sam (the owner) is not a developer and has no terminal he runs himself, so see section 11 for how to work with him.
