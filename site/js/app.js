@@ -510,7 +510,7 @@
     <th class="l" title="Position">#</th><th class="l"><span class="sr">Move</span></th><th class="l">Player</th>
     <th class="wide" title="Exact scores, 5 points each">Exact</th><th class="wide" title="Correct goal difference, 3 points each">GD</th><th class="wide" title="Correct result, 1 point each">Result</th>
     <th class="xwide" title="Points from match picks">Match</th><th class="wide" title="Season bonus points">Bonus</th>
-    <th class="xwide" title="Points in each of the last five completed gameweeks">Form</th>
+    <th class="xwide formh" title="Points in each of the last five completed gameweeks">Form</th>
     <th title="Points over the last five completed gameweeks">Last 5</th>
     <th class="xwide" title="Picks entered for Super 6 matches that have locked so far">Picks</th><th>Pts</th>
   </tr></thead>
@@ -585,7 +585,7 @@
   let chartWeeks = null;
   function chartSVG(weeks, pid) {
     chartWeeks = { weeks, pid };
-    const W = Math.round(Math.max(300, Math.min(808, window.innerWidth - 32))), H = W < 500 ? 200 : 240, L = 28, R = 6, T = 10, B = 24;
+    const W = Math.round(Math.max(300, Math.min(1176, window.innerWidth - (window.innerWidth >= 900 ? 64 : 32)) - 40)), H = W < 500 ? 200 : 240, L = 28, R = 6, T = 10, B = 24;
     const max = Math.max(30, ...weeks.map((w) => Math.max(w.best, w.pts[pid] || 0)));
     const top = Math.ceil(max / 10) * 10;
     const y = (v) => T + (H - T - B) * (1 - v / top);
@@ -751,7 +751,7 @@ ${six.length ? `<div class="panel">
   ${localIsUK ? '' : `<span class="seg" role="group" aria-label="Show times in"><button data-act="tm" data-v="local" aria-pressed="${tm === 'local'}">My time</button><button data-act="tm" data-v="uk" aria-pressed="${tm === 'uk'}">UK time</button></span>`}
   <label class="check"><input type="checkbox" data-act="s6only"${s6only ? ' checked' : ''}> Super 6 only</label>
 </div>
-${rows || '<div class="panel pad"><p class="muted">No matches.</p></div>'}
+${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad"><p class="muted">No matches.</p></div>'}
 <p class="note">${zoneLine}</p>`;
   }
   const score_ = (pr, f) => score(pr.home_goals, pr.away_goals, f.home_goals, f.away_goals);
@@ -839,8 +839,8 @@ ${rows || '<div class="panel pad"><p class="muted">No matches.</p></div>'}
 <div class="rules">
   <section class="panel pad"><h2>Points per match</h2>
     <ul class="pts-list">
-      <li><span class="cell p5">5</span><span>Exact score. Predict 2-1, result 2-1.</span></li>
-      <li><span class="cell p3">3</span><span>Right goal difference, wrong score. Predict 2-1, result 3-2. A correctly called draw always lands here or higher.</span></li>
+      <li><span class="cell p5">5</span><span>Exact score. Predict 2-1, result\u00a02-1.</span></li>
+      <li><span class="cell p3">3</span><span>Right goal difference, wrong score. Predict 2-1, result 3-2. A correctly called draw always lands here or\u00a0higher.</span></li>
       <li><span class="cell p1">1</span><span>Right winner, wrong margin. Predict 3-0, result 1-0. Draws never score 1.</span></li>
       <li><span class="cell p0">0</span><span>Anything else.</span></li>
     </ul>

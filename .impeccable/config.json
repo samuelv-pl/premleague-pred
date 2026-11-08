@@ -18,6 +18,15 @@
         ],
         "createdAt": "2026-11-08T06:27:56.909Z",
         "reason": "Agent: #37003c is the Premier League brand purple, a brand commitment in PRODUCT.md"
+      },
+      {
+        "rule": "line-length",
+        "value": "*",
+        "files": [
+          "site/**"
+        ],
+        "createdAt": "2026-11-08T07:58:41.348Z",
+        "reason": "Sam (user): paragraphs capped at ~65ch looked broken next to the full-width table; text should use the content width"
       }
     ]
   }
