@@ -462,7 +462,7 @@
     let dlLine = `<b>${ICON.clock}No open picks</b>${line('The season is done')}`;
     if (dl) {
       const what = dl.fixture ? `${esc(dl.fixture.home)} v ${esc(dl.fixture.away)}` : `GW${dl.gw} picks`;
-      const ukPart = localIsUK || sameClock(dl.at) ? '' : ` <span class="muted">${esc(hm(dl.at, UK))} UK</span>`;
+      const ukPart = localIsUK || sameClock(dl.at) ? '' : ` <span class="muted">(${esc(hm(dl.at, UK))} UK)</span>`;
       let cta = '';
       if (!S.session) cta = act('#/login', 'Sign in to pick');
       else if (S.me) {
@@ -496,10 +496,9 @@
         <td class="tot">${b.total}</td>
       </tr>`;
     }).join('');
-    const facts = [`Gameweek ${d.currentGw} of 38`, `${scored} of ${total6} Super 6 results in`];
-    if (outstanding && cur && cur.done) facts.push(`${outstanding} still to play this week`);
+    const facts = `Gameweek ${d.currentGw} of 38. ${scored} of ${total6} Super 6 results in${outstanding && cur && cur.done ? `, ${outstanding} still to play this week` : ''}.`;
     return `
-${pageHead('League table', facts.map((x) => `<span>${x}</span>`).join(''))}
+${pageHead('League table', facts)}
 <section class="summary panel" aria-label="At a glance">
   <div class="item lead"><p>${leadLine}</p></div>
   <div class="item"><p>${weekLine}</p></div>
@@ -733,18 +732,14 @@ ${six.length ? `<div class="panel bleed">
       day.items.push(f);
     });
     const rows = days.map((day) => `<section class="panel day-panel"><div class="panel-head"><h2>${esc(day.label)}</h2></div>` + day.items.map((f) => {
-      let sc;
-      if (isDone(f)) sc = `<span class="score"><b>${f.home_goals}-${f.away_goals}</b><small>FT</small></span>`;
-      else if (f.status === 'POSTPONED') sc = '<span class="score pp"><b>P-P</b></span>';
-      else if (f.status === 'IN_PLAY') sc = '<span class="score live"><b>Live</b></span>';
-      else sc = '<span class="score v"><b>v</b></span>';
+      const sc = scoreHTML(f);
       const extra = [];
       if (f.result_source === 'admin' && isDone(f)) extra.push('Result entered by admin');
       if (f.super6 && S.me) {
         const pr = d.predMap.get(S.me.id + ':' + f.id);
         if (pr) {
           const pts = isDone(f) ? score_(pr, f) : null;
-          extra.push(`Your pick <b>${pr.home_goals}-${pr.away_goals}</b>${pts != null ? ` <span class="cell p${pts}">${pts} pt${pts === 1 ? '' : 's'}</span>` : ''}`);
+          extra.push(`Your pick <b>${pr.home_goals}-${pr.away_goals}</b>${pts != null ? ' ' + ptsChip(pts) : ''}`);
         } else if (!isLocked(f)) extra.push(`<a href="#/predict/${f.gw}">No pick yet. Add one</a>`);
       }
       return `<div class="fx${f.status === 'POSTPONED' ? ' dim' : ''}">
@@ -755,14 +750,11 @@ ${six.length ? `<div class="panel bleed">
       </div>`;
     }).join('') + '</section>').join('');
 
-    const tm = timeMode();
     const now = new Date();
+    const zoneName = fmt(now, LOCAL, { timeZoneName: 'long' }).split(', ').pop();
     const zoneLine = localIsUK
-      ? `Times are UK time (${esc(tzAbbr(now, UK))}).`
-      : (tm === 'uk'
-        ? `Times are UK time (${esc(tzAbbr(now, UK))}), with your time (${esc(fmt(now, LOCAL, { timeZoneName: 'long' }).split(', ').pop())}) underneath.`
-        : `Times are in your time zone (${esc(fmt(now, LOCAL, { timeZoneName: 'long' }).split(', ').pop())}), with UK time (${esc(tzAbbr(now, UK))}) underneath.`)
-        + ' Days follow the UK matchday so everyone sees the same list.';
+      ? `Kick-off times are UK time (${esc(tzAbbr(now, UK))}).`
+      : `Kick-off times are in ${esc(zoneName)}, with UK time beside them when it differs. Days follow the UK matchday so everyone sees the same list.`;
     let lockLine = '';
     if (lock) {
       lockLine = d.set.lock_mode === 'per_match'
@@ -770,19 +762,28 @@ ${six.length ? `<div class="panel bleed">
         : `Super 6 picks ${Date.now() >= lock.getTime() ? 'locked' : 'lock'} at the first Super 6 kick-off: ${esc(whenText(lock))}.`;
     }
     return `
-<div class="head"><h1>Fixtures &amp; results</h1><p class="lede">Gameweek ${gw}. ${lockLine}</p></div>
+${pageHead('Fixtures &amp; results', `Gameweek ${gw}. ${lockLine}`, gwStepper('fixtures', gw))}
 <div class="controls">
-  ${gwStepper('fixtures', gw)}
-  <span class="grow"></span>
-  ${localIsUK ? '' : `<span class="seg" role="group" aria-label="Show times in"><button data-act="tm" data-v="local" aria-pressed="${tm === 'local'}">My time</button><button data-act="tm" data-v="uk" aria-pressed="${tm === 'uk'}">UK time</button></span>`}
   <label class="check"><input type="checkbox" data-act="s6only"${s6only ? ' checked' : ''}> Super 6 only</label>
 </div>
-${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad"><p class="muted">No matches.</p></div>'}
+${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad empty"><p>No matches for this gameweek.</p></div>'}
 <p class="note">${zoneLine}</p>`;
   }
   const score_ = (pr, f) => score(pr.home_goals, pr.away_goals, f.home_goals, f.away_goals);
 
   // ---------------------------------------------------------------- bonus
+  // Short initials for player dots: two letters, longer only where two players would clash.
+  function initialsFor(names) {
+    const out = {};
+    names.forEach((n) => {
+      let k = 2;
+      const clash = () => names.some((m) => m !== n && m.slice(0, k).toLowerCase() === n.slice(0, k).toLowerCase());
+      while (k < n.length && k < 3 && clash()) k++;
+      out[n] = n.slice(0, 1).toUpperCase() + n.slice(1, k).toLowerCase();
+    });
+    return out;
+  }
+
   function viewBonus() {
     const d = S.data;
     const isPublic = d.set.bonus_public === 'true';
@@ -800,53 +801,96 @@ ${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad"><p
     const hits = new Set(d.vbonus.map((b) => b.player_id + ':' + b.slot));
     const people = d.board.map((b) => d.byId[b.player_id]).filter(Boolean);
     const visible = new Set(d.picks.map((p) => p.player_id));
-
-    const sections = groups.map((g) => {
-      const picks = d.picks.filter((p) => g.slots.includes(p.slot));
-      // group identical answers (case and spacing ignored) so the page reads like a poll
-      const buckets = new Map();
-      picks.forEach((p) => {
-        const k = p.pick.trim().toLowerCase();
-        if (!buckets.has(k)) buckets.set(k, { label: p.pick.trim(), who: [], hit: false, mine: false });
-        const b = buckets.get(k);
-        const pl = d.byId[p.player_id];
-        if (pl && !b.who.includes(pl.name)) b.who.push(pl.name);
-        if (hits.has(p.player_id + ':' + p.slot)) b.hit = true;
-        if (S.me && p.player_id === S.me.id) b.mine = true;
-      });
-      const chips = Array.from(buckets.values())
-        .sort((a, b) => b.who.length - a.who.length || a.label.localeCompare(b.label))
-        .map((b) => `<span class="chip${b.hit ? ' hit' : ''}${b.mine ? ' mine' : ''}"${b.hit ? ' title="Correct"' : ''}>${CREST_IDS[b.label] ? crest(b.label, 18) : ''}<b>${esc(b.label)}</b>${b.hit ? ICON.check : ''}<span class="by">${b.who.map(esc).join(', ')}</span></span>`).join('');
+    const pickers = people.filter((p) => visible.has(p.id));
+    const ini = initialsFor(people.map((p) => p.name));
+    const isMe = (id) => S.me && S.me.id === id;
+    const ptsLabel = (g) => (g.slots.length > 1 ? `${g.each} pts each` : `${g.each} pts`);
+    const ansText = (g) => {
       const ans = actual[g.key];
-      const pts = g.slots.length > 1 ? `${g.each} pts each, ${g.slots.length} picks` : `${g.each} pts`;
-      return `<div class="bonus-row">
-        <div class="top2"><h3>${esc(g.label)}</h3><span class="pts">${pts}</span></div>
-        <div class="ans">${ans && ans.length ? `Answer: <b>${esc(ans[0])}</b>${ans.length > 1 && (g.key === 'top4' || g.key === 'bottom3') ? ', ' + ans.slice(1).map(esc).join(', ') : ''}` : '<span class="muted">Not settled yet</span>'}</div>
-        <div class="chips">${chips || '<span class="muted small">No picks</span>'}</div>
-      </div>`;
-    }).join('');
-
-    const totals = people.map((p) => {
-      const b = d.board.find((x) => x.player_id === p.id);
-      const n = d.vbonus.filter((x) => x.player_id === p.id).length;
-      return `<tr${S.me && S.me.id === p.id ? ' class="me"' : ''}><td class="l">${esc(p.name)}</td><td>${n}</td><td>${b ? b.bonus : 0}</td></tr>`;
-    }).join('');
+      if (!ans || !ans.length) return '';
+      return g.key === 'top4' || g.key === 'bottom3' ? ans.map(esc).join(', ') : esc(ans[0]);
+    };
+    const label = (t, size) => `${CREST_IDS[t] ? crest(t, size) : ''}<span class="bt-l">${esc(t)}</span>`;
 
     let vis;
-    if (isPublic) vis = 'Everyone’s picks are on show. Your picks have a heavier border.';
+    if (isPublic) vis = 'Picks were made before the season and can no longer be changed.';
     else if (visible.size > 1) vis = 'Showing the picks you are allowed to see.';
     else if (S.me) vis = 'Only your own picks are shown. Sam will reveal everyone’s picks later in the season.';
     else vis = 'The picks are hidden until Sam reveals them later in the season.';
 
+    const lede = `Up to ${max} extra points, settled as the season’s awards are decided. They go straight into the Bonus column of the table.`;
+
+    if (!pickers.length) {
+      const list = groups.map((g) => `<li><span>${esc(g.label)}${g.slots.length > 1 ? ` (${g.slots.length} picks)` : ''}</span><span>${ptsLabel(g)}</span></li>`).join('');
+      return `
+${pageHead('Season bonus', lede)}
+<div class="panel pad empty"><h2>${ICON.lock}Picks are hidden for now</h2><p>These are the categories and what each is worth.</p><ul class="blist">${list}</ul></div>
+<p class="note">${vis}</p>`;
+    }
+
+    const view = store.get('s6.bonusView', 'cat') === 'player' ? 'player' : 'cat';
+    const seg = pickers.length > 1 ? `<span class="seg" role="group" aria-label="Show picks"><button type="button" data-act="bview" data-v="cat" aria-pressed="${view === 'cat'}">By category</button><button type="button" data-act="bview" data-v="player" aria-pressed="${view === 'player'}">By player</button></span>` : '';
+
+    let main;
+    if (view === 'cat') {
+      // Each answer with one dot per player, in table order, so a column follows one person down the page.
+      main = '<div class="bgrid">' + groups.map((g) => {
+        const buckets = new Map();
+        d.picks.filter((p) => g.slots.includes(p.slot)).forEach((p) => {
+          const k = p.pick.trim().toLowerCase();
+          if (!buckets.has(k)) buckets.set(k, { label: p.pick.trim(), ids: new Set(), hit: false });
+          const b = buckets.get(k);
+          b.ids.add(p.player_id);
+          if (hits.has(p.player_id + ':' + p.slot)) b.hit = true;
+        });
+        const settled = !!ansText(g);
+        const opts = Array.from(buckets.values())
+          .sort((a, b) => b.ids.size - a.ids.size || a.label.localeCompare(b.label))
+          .map((b) => {
+            const names = pickers.filter((p) => b.ids.has(p.id)).map((p) => p.name);
+            const dots = pickers.map((p) => (b.ids.has(p.id)
+              ? `<span class="dot${isMe(p.id) ? ' me' : ''}" title="${esc(p.name)}">${esc(ini[p.name])}</span>`
+              : '<span class="dot off"></span>')).join('');
+            return `<li class="opt${b.hit ? ' hit' : ''}${settled && !b.hit ? ' miss' : ''}${S.me && b.ids.has(S.me.id) ? ' mine' : ''}">
+              <span class="on">${label(b.label, 20)}${b.hit ? `<span class="tick">${ICON.check}<span class="sr">Correct</span></span>` : ''}</span>
+              <span class="dots" aria-hidden="true">${dots}</span>
+              <span class="cnt">${b.ids.size}<small>/${pickers.length}</small></span>
+              <span class="sr">Picked by ${names.map(esc).join(', ')}</span>
+            </li>`;
+          }).join('');
+        const status = settled
+          ? `<span class="ans">${ICON.check}${ansText(g)}</span>`
+          : '<span class="muted">Not settled yet</span>';
+        return `<section class="panel bcat">
+          <div class="panel-head"><h2>${esc(g.label)}</h2><span class="ptag">${ptsLabel(g)}</span></div>
+          <div class="bstat">${status}${g.slots.length > 1 ? `<span class="muted">${g.slots.length} picks each</span>` : ''}</div>
+          <ul class="opts">${opts || '<li class="muted">No picks</li>'}</ul>
+        </section>`;
+      }).join('') + '</div>';
+    } else {
+      // One card per player: their picks and the bonus points they have banked.
+      const cards = pickers.map((p) => {
+        const b = d.board.find((x) => x.player_id === p.id);
+        const n = d.vbonus.filter((x) => x.player_id === p.id).length;
+        const rowsP = groups.map((g) => {
+          const mine = g.slots.map((sl) => d.picks.find((x) => x.player_id === p.id && x.slot === sl)).filter(Boolean);
+          const vals = mine.length
+            ? mine.map((x) => `<span class="pv${hits.has(p.id + ':' + x.slot) ? ' hit' : ''}">${label(x.pick.trim(), 18)}${hits.has(p.id + ':' + x.slot) ? `<span class="tick">${ICON.check}<span class="sr">Correct</span></span>` : ''}</span>`).join('')
+            : '<span class="muted">None</span>';
+          return `<div class="prw"><dt>${esc(g.label)}</dt><dd>${vals}</dd></div>`;
+        }).join('');
+        return { p, bonus: b ? b.bonus : 0, html: `<section class="panel pcard${isMe(p.id) ? ' me' : ''}">
+          <div class="panel-head"><h2>${esc(p.name)}${isMe(p.id) ? '<span class="you">You</span>' : ''}</h2><span class="pc-pts"><b>${b ? b.bonus : 0}</b> pts<small>${n} correct</small></span></div>
+          <dl class="plist">${rowsP}</dl>
+        </section>` };
+      }).sort((a, b) => b.bonus - a.bonus).map((x) => x.html).join('');
+      main = `<div class="pgrid">${cards}</div>`;
+    }
+
     return `
-<div class="head"><h1>Season bonus</h1>
-<p class="lede">Up to ${max} extra points, settled as the season’s awards are decided. They go straight into the Bonus column of the table.</p></div>
-<div class="split">
-  <div class="panel"><div class="panel-head"><h2>Bonus points so far</h2></div>
-  <table class="btable"><thead><tr><th class="l">Player</th><th>Correct</th><th>Points</th></tr></thead><tbody>${totals}</tbody></table></div>
-  <div class="panel"><div class="panel-head"><h2>The picks</h2></div>${sections}</div>
-</div>
-<p class="note">${vis} Picks were made before the season and can no longer be changed. A correct pick turns green with a tick.</p>`;
+${pageHead('Season bonus', lede, seg)}
+${main}
+<p class="note">${vis}${view === 'cat' && pickers.length > 1 ? ' Each dot is a player, in table order. Yours is filled in purple.' : ''}</p>`;
   }
 
   // ---------------------------------------------------------------- rules
@@ -861,14 +905,14 @@ ${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad"><p
     });
     const max = d.slots.reduce((t, x) => t + x.points_each, 0);
     return `
-<div class="head"><h1>How it works</h1><p class="lede">Six matches a week. Call the score.</p></div>
+${pageHead('How it works', 'Six matches a week. Call the score.')}
 <div class="rules">
   <section class="panel pad"><h2>Points per match</h2>
     <ul class="pts-list">
-      <li><span class="cell p5">5</span><span>Exact score. Predict 2-1, result\u00a02-1.</span></li>
-      <li><span class="cell p3">3</span><span>Right goal difference, wrong score. Predict 2-1, result 3-2. A correctly called draw always lands here or\u00a0higher.</span></li>
-      <li><span class="cell p1">1</span><span>Right winner, wrong margin. Predict 3-0, result 1-0. Draws never score 1.</span></li>
-      <li><span class="cell p0">0</span><span>Anything else.</span></li>
+      <li><span class="pk p5"><b>5</b></span><span>Exact score. Predict 2-1, result\u00a02-1.</span></li>
+      <li><span class="pk p3"><b>3</b></span><span>Right goal difference, wrong score. Predict 2-1, result 3-2. A correctly called draw always lands here or\u00a0higher.</span></li>
+      <li><span class="pk p1"><b>1</b></span><span>Right winner, wrong margin. Predict 3-0, result 1-0. Draws never score 1.</span></li>
+      <li><span class="pk p0"><b>0</b></span><span>Anything else.</span></li>
     </ul>
   </section>
   <section class="panel pad"><h2>The six and the deadline</h2>
@@ -880,7 +924,7 @@ ${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad"><p
   </section>
   <section class="panel pad"><h2>Tie-breaks and times</h2>
     <p>Ties break on total points, then exact scores, then correct goal differences.</p>
-    <p>Kick-offs show in your own time zone with UK time alongside. Gameweeks are listed by UK matchday.</p>
+    <p>Kick-offs show in your own time zone, with UK time beside them when it differs. Gameweeks are listed by UK matchday.</p>
   </section>
 </div>`;
   }
@@ -928,7 +972,7 @@ ${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad"><p
     else if (allLocked) lede = `All picks for this week are locked. <a href="#/gw/${gw}">See everyone’s picks</a>.`;
     else if (perMatch) {
       const next = six.filter((f) => !isLocked(f))[0];
-      lede = `Each pick locks at its own kick-off. Next to lock: ${esc(next.home)} v ${esc(next.away)}, ${esc(whenText(next.ko))}, ${esc(untilText(next.ko))}.`;
+      lede = `Each pick locks at its own kick-off. Next up: ${esc(next.home)} v ${esc(next.away)}, ${esc(untilText(next.ko))}.`;
     } else lede = `Picks lock ${esc(untilText(lock))}, at the first Super 6 kick-off: ${esc(whenText(lock))}.`;
 
     let lastDay = '';
@@ -944,7 +988,7 @@ ${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad"><p
       const pr = S.me ? d.predMap.get(S.me.id + ':' + f.id) : null;
       const done = isDone(f);
       const pts = done && pr ? score(pr.home_goals, pr.away_goals, f.home_goals, f.away_goals) : null;
-      const teams = `<div class="match"><span class="team h"><span class="nm">${esc(f.home)}</span>${crest(f.home)}</span><span class="vsx">v</span><span class="team a">${crest(f.away)}<span class="nm">${esc(f.away)}</span></span></div>`;
+      const teams = `<div class="match"><span class="team h"><span class="nm">${esc(f.home)}</span>${crest(f.home)}</span>${scoreHTML(f)}<span class="team a">${crest(f.away)}<span class="nm">${esc(f.away)}</span></span></div>`;
       if (editable && !locked) {
         const box = (side, v, team) => `<span class="step">
             <button type="button" class="stepbtn" data-step="-1" data-side="${side}" aria-label="One fewer ${esc(team)} goal">${ICON.minus}</button>
@@ -959,19 +1003,17 @@ ${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad"><p
           <div class="rstat${pr ? ' ok' : ''}" aria-live="polite">${pr ? `${ICON.check}Saved` : 'No pick yet'}</div>
         </div>`;
       }
-      let mine = '';
-      if (editable) mine = `<span class="pick">${pr ? `${pr.home_goals}-${pr.away_goals}` : '<span class="muted">none</span>'}</span>`;
-      const extra = [];
-      if (done) extra.push(`Full time <b>${f.home_goals}-${f.away_goals}</b>${pts != null ? ` · <span class="cell p${pts}">${pts} pt${pts === 1 ? '' : 's'}</span>` : ''}`);
-      else if (f.status === 'IN_PLAY') extra.push('<span class="live">Live</span>');
-      else if (f.status === 'POSTPONED') extra.push('Postponed');
-      else if (locked) extra.push('Locked');
-      else if (!editable) extra.push(`Kick-off ${esc(whenText(f.ko))}`);
+      // Locked or view-only: the result sits between the teams; your pick and points below.
+      let line = '';
+      if (editable) {
+        line = pr
+          ? `<span class="pick-l">Your pick</span><span class="pick">${pr.home_goals}-${pr.away_goals}</span>${pts != null ? ptsChip(pts) : (locked && !done ? '<span class="muted">Locked</span>' : '')}`
+          : `<span class="muted">${locked ? 'No pick made' : 'No pick yet'}</span>`;
+      } else if (locked && !done && f.status !== 'IN_PLAY') line = '<span class="muted">Locked</span>';
       return `<div class="prow${locked ? ' locked' : ''}">
         <div class="time">${timeHTML(f.ko)}</div>
         ${teams}
-        ${editable ? `<div class="entry">${mine}</div>` : ''}
-        ${extra.length ? `<div class="extra">${extra.join(' · ')}</div>` : ''}
+        ${line ? `<div class="entry mine">${line}</div>` : ''}
       </div>`;
     }
 
@@ -982,12 +1024,12 @@ ${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad"><p
       const have = six.filter((f) => d.predMap.get(S.me.id + ':' + f.id)).length;
       progress = `<div class="progress" id="predProg"><span class="pbar"><i class="pfill w${have}"></i></span><span><b>${have} of ${six.length}</b> picked</span></div>`;
     }
-    return `
-<div class="head"><h1>Predictions</h1><p class="lede">Gameweek ${gw}. ${lede}</p></div>
-<div class="controls">${gwStepper('predict', gw)}<span class="grow"></span>${progress}</div>
+    return `<div class="narrow">
+${pageHead('Predictions', `Gameweek ${gw}. ${lede}`, gwStepper('predict', gw))}
+${progress ? `<div class="controls">${progress}</div>` : ''}
 ${top}
 ${six.length ? `<div class="panel" id="predForm">${rows}</div>` : ''}
-${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both scores are in. Type a number and the cursor jumps to the next box, or use the buttons (use + for 10 or more). You can change a pick as often as you like until that match locks; clear both boxes to remove it.</p>' : ''}`;
+${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both scores are in. Type a number and the cursor jumps to the next box, or use the buttons (use + for 10 or more). You can change a pick as often as you like until that match locks; clear both boxes to remove it.</p>' : ''}</div>`;
   }
 
   // Autosave: each match saves on its own as soon as both scores are filled in.
@@ -1117,8 +1159,7 @@ ${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both 
     const actual = Object.fromEntries(d.actual.map((a) => [a.group_key, a.accepted || []]));
 
     return `
-<div class="head"><h1>Admin</h1><p class="lede">Only you can see this tab. Changes go live for everyone straight away.</p></div>
-<div class="controls">${gwStepper('admin', gw)}</div>
+${pageHead('Admin', 'Only you can see this tab. Changes go live for everyone straight away.', gwStepper('admin', gw))}
 
 <form class="aform panel" id="fSix" novalidate>
   <div class="panel-head"><h2>The six for GW${gw}</h2></div><div class="body">
@@ -1297,7 +1338,7 @@ ${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both 
   function viewAccount() {
     const name = S.me ? S.me.name : '';
     return `
-<div class="head"><h1>Your account</h1><p class="lede">Signed in as ${esc(name || S.session.user.email)}.</p></div>
+${pageHead('Your account', `Signed in as ${esc(name || S.session.user.email)}.`)}
 <div class="account"><div class="panel pad">
   <h2>Change password</h2>
   <form class="form" data-act="password" novalidate>
