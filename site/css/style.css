@@ -489,5 +489,5 @@ label.check { min-height: 36px; }
 @media (min-width: 640px) {
   .league td.name { min-width: 130px; }
   .league th:not(.l), .league td:not(.l):not(.pos):not(.mvc) { text-align: center; }
-  .league th:last-child, .league td.tot { text-align: right; }
+  .league th:last-child, .league td.tot { text-align: center; width: 72px; }
 }
