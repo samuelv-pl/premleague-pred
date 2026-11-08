@@ -167,10 +167,13 @@
       fetchAll('v_bonus', 'player_id,slot,points', ['slot', 'player_id']),
     ]);
     fixtures.forEach((f) => { f.ko = new Date(f.kickoff); });
+    // Picks made per player, counted like the old Sheet (db/06). Optional: older databases lack the view.
+    let pickCounts = null;
+    try { pickCounts = await fetchAll('v_pick_counts', 'player_id,made,total', ['player_id']); } catch (e) { pickCounts = null; }
     const set = Object.fromEntries(settings.map((r) => [r.key, r.value]));
     const byId = Object.fromEntries(players.map((p) => [p.id, p]));
     const predMap = new Map(preds.map((p) => [p.player_id + ':' + p.fixture_id, p]));
-    const d = { players, byId, fixtures, preds, predMap, points, gwPoints, board, set, slots, picks, actual, vbonus };
+    const d = { players, byId, fixtures, preds, predMap, points, gwPoints, board, set, slots, picks, actual, vbonus, pickCounts };
     d.currentGw = currentGw(fixtures);
     return d;
   }
@@ -436,9 +439,16 @@
     const lastFive = completeWeeks.slice(-5);
     const cur = weeks[d.currentGw - 1];
     const outstanding = cur ? cur.six.filter((f) => !isDone(f)).length : 0;
-    const lockedSix = d.fixtures.filter((f) => f.super6 && isLocked(f)).length;
+    // As in the Sheet: picks made (including future ones) out of every Super 6 match.
+    // Without db/06 we can only count locked matches, so fall back to that.
+    let picksTotal = d.fixtures.filter((f) => f.super6 && isLocked(f)).length;
     const picks = {};
-    d.preds.forEach((p) => { const f = d.fixtures.find((x) => x.id === p.fixture_id); if (f && f.super6 && isLocked(f)) picks[p.player_id] = (picks[p.player_id] || 0) + 1; });
+    if (d.pickCounts) {
+      picksTotal = d.fixtures.filter((f) => f.super6).length;
+      d.pickCounts.forEach((c) => { picks[c.player_id] = c.made; });
+    } else {
+      d.preds.forEach((p) => { const f = d.fixtures.find((x) => x.id === p.fixture_id); if (f && f.super6 && isLocked(f)) picks[p.player_id] = (picks[p.player_id] || 0) + 1; });
+    }
 
     // summary strip: a short title, one or two short detail lines, then the action on its own line
     const line = (t) => `<span class="ln">${t}</span>`;
@@ -492,7 +502,7 @@
         <td class="xwide">${b.match_pts}</td><td class="wide">${b.bonus}</td>
         <td class="xwide formc">${form.length ? formSVG(form) : ''}</td>
         <td>${b.last5}</td>
-        <td class="xwide picksc">${picks[b.player_id] || 0}<small> / ${lockedSix}</small></td>
+        <td class="xwide picksc">${picks[b.player_id] || 0}<small> / ${picksTotal}</small></td>
         <td class="tot">${b.total}</td>
       </tr>`;
     }).join('');
@@ -512,7 +522,7 @@ ${pageHead('League table', facts)}
     <th class="xwide" title="Points from match picks">Match</th><th class="wide" title="Season bonus points">Bonus</th>
     <th class="xwide formh" title="Points in each of the last five completed gameweeks">Form</th>
     <th title="Points over the last five completed gameweeks">Last 5</th>
-    <th class="xwide" title="Picks entered for Super 6 matches that have locked so far">Picks</th><th>Pts</th>
+    <th class="xwide" title="Super 6 picks entered, out of every Super 6 match this season">Picks</th><th>Pts</th>
   </tr></thead>
   <tbody>${rows}</tbody>
 </table>
