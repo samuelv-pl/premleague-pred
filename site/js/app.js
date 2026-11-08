@@ -1,6 +1,6 @@
 /* Super 6 League site. Plain JS, no build step.
- * Data comes from Supabase under row level security; nothing is readable
- * without a login. Kick-offs are stored in UTC and shown in each viewer's
+ * Data comes from Supabase under row level security. Anyone can view;
+ * signing in adds your own picks (and the admin tab for admins). Kick-offs are stored in UTC and shown in each viewer's
  * own time zone, with UK time (Europe/London) as the shared reference. */
 (function () {
   'use strict';
@@ -64,12 +64,12 @@
   }
   // One-line version for sentences: "Sat 21 Nov, 18:00 your time (12:30 UK)".
   function whenText(d) {
-    const ukFull = `${shortDay(d, UK)}, ${hm(d, UK)} UK`;
+    const ukFull = `${shortDay(d, UK)}, ${hm(d, UK)}\u00a0UK`;
     if (localIsUK || sameClock(d)) return ukFull;
     const sameDay = dayKey(d, LOCAL) === dayKey(d, UK);
-    const locFull = `${shortDay(d, LOCAL)}, ${hm(d, LOCAL)} your time`;
-    if (timeMode() === 'uk') return `${ukFull} (${sameDay ? hm(d, LOCAL) : shortDay(d, LOCAL) + ', ' + hm(d, LOCAL)} your time)`;
-    return `${locFull} (${sameDay ? hm(d, UK) : shortDay(d, UK) + ', ' + hm(d, UK)} UK)`;
+    const locFull = `${shortDay(d, LOCAL)}, ${hm(d, LOCAL)}\u00a0your time`;
+    if (timeMode() === 'uk') return `${ukFull} (${sameDay ? hm(d, LOCAL) : shortDay(d, LOCAL) + ', ' + hm(d, LOCAL)}\u00a0your time)`;
+    return `${locFull} (${sameDay ? hm(d, UK) : shortDay(d, UK) + ', ' + hm(d, UK)}\u00a0UK)`;
   }
 
   const CODES = {
@@ -114,7 +114,10 @@
       s.className = 'crest code'; s.textContent = el.getAttribute('data-code') || '';
       el.replaceWith(s);
     } else if (el && el.tagName === 'IMG' && el.classList.contains('emblem')) {
-      el.remove();
+      const box = el.parentElement;
+      if (box && box.classList.contains('hero-mark')) box.remove();
+      else if (box && box.classList.contains('mark')) box.textContent = '6';
+      else el.remove();
     }
   }, true);
   const code = (t) => CODES[t] || String(t).slice(0, 3).toUpperCase();
@@ -242,6 +245,8 @@
   }
 
   function render() {
+    const rn = route().name;
+    if (rn !== S.lastRoute) { S.dirty = false; S.lastRoute = rn; }
     hideTip();
     if (!S.data) {
       app.innerHTML = shell('', S.error
@@ -426,6 +431,7 @@
     const lastFive = completeWeeks.slice(-5);
     const cur = weeks[d.currentGw - 1];
     const outstanding = cur ? cur.six.filter((f) => !isDone(f)).length : 0;
+    const lockedSix = d.fixtures.filter((f) => f.super6 && isLocked(f)).length;
     const picks = {};
     d.preds.forEach((p) => { const f = d.fixtures.find((x) => x.id === p.fixture_id); if (f && f.super6) picks[p.player_id] = (picks[p.player_id] || 0) + 1; });
 
@@ -437,12 +443,12 @@
       const leaders = d.board.filter((b) => b.rank === 1).map((b) => b.name);
       leadLine = leaders.length > 1
         ? `<b>${leaders.map(esc).join(' and ')}</b>Level at the top on ${lead.total} points.`
-        : `<b>${esc(lead.name)} leads on ${lead.total}</b>${gap ? `${gap} clear of ${esc(second.name)}.` : `Level with ${esc(second.name)} on points, ahead on exact scores.`}`;
+        : `<b>${esc(lead.name)} leads on ${lead.total}</b>${gap ? `${gap} clear of ${esc(second.name)}.` : `Level with ${esc(second.name)} on points, ahead on the tie-break.`}`;
     }
     let weekLine = '';
     if (cur && cur.six.length) {
       weekLine = cur.done
-        ? `<b>GW${cur.gw}: ${cur.done} of ${cur.six.length} in</b>${esc(cur.leaders.join(', '))} ${cur.complete ? 'won it' : 'top'} with ${cur.best}. <a href="#/gw/${cur.gw}">See the picks</a>`
+        ? `<b>GW${cur.gw}: ${cur.done} of ${cur.six.length} in</b>${esc(cur.leaders.join(', '))} ${cur.complete ? 'won it' : (cur.leaders.length > 1 ? 'lead' : 'leads')} with ${cur.best}. <a href="#/gw/${cur.gw}">See the picks</a>`
         : `<b>GW${cur.gw} starts ${esc(shortDay(cur.six.slice().sort((a, b) => a.ko - b.ko)[0].ko, LOCAL))}</b><a href="#/fixtures/${cur.gw}">See the fixtures</a>`;
     }
     const dl = nextDeadline();
@@ -454,7 +460,7 @@
       else if (S.me) {
         const six = d.fixtures.filter((f) => f.gw === dl.gw && f.super6);
         const mine = six.filter((f) => d.predMap.get(S.me.id + ':' + f.id)).length;
-        cta = `<a href="#/predict/${dl.gw}">${mine === six.length ? 'All six in. Review' : `You have ${mine} of ${six.length}. Pick now`}</a>`;
+        cta = `<a href="#/predict/${dl.gw}">${mine === six.length ? 'All six in. Review them' : `You have ${mine} of ${six.length}. Pick now`}</a>`;
       } else cta = '';
       dlLine = `<b>${what} ${esc(untilText(dl.at))}</b>${esc(whenText(dl.at))}. ${cta}`;
     }
@@ -473,12 +479,12 @@
       return `<tr class="${me ? 'me' : ''}${podium}">
         <td class="pos"><span class="rank">${b.rank}</span></td>
         <td class="mvc">${mv}</td>
-        <td class="l name">${esc(b.name)}${me ? '<span class="you">You</span>' : ''}<span class="sub">${b.exact} exact · ${b.gd} GD · ${b.outcome} result${b.bonus ? ` · ${b.bonus} bonus` : ''}</span></td>
+        <td class="l name">${esc(b.name)}${me ? '<span class="you">You</span>' : ''}<span class="sub">${b.exact} exact · ${b.gd} GD · ${b.outcome} result${b.outcome === 1 ? '' : 's'}${b.bonus ? ` · ${b.bonus} bonus` : ''}</span></td>
         <td class="wide">${b.exact}</td><td class="wide">${b.gd}</td><td class="wide">${b.outcome}</td>
         <td class="xwide">${b.match_pts}</td><td class="wide">${b.bonus}</td>
         <td class="xwide formc">${form.length ? formSVG(form) : ''}</td>
         <td>${b.last5}</td>
-        <td class="xwide picksc">${picks[b.player_id] || 0}<small> / ${total6}</small></td>
+        <td class="xwide picksc">${picks[b.player_id] || 0}<small> / ${lockedSix}</small></td>
         <td class="tot">${b.total}</td>
       </tr>`;
     }).join('');
@@ -486,7 +492,7 @@
 <section class="hero">
   <div class="hero-top">
     <span class="hero-mark"><img class="emblem" src="${PL_EMBLEM}" alt="Premier League" width="44" height="44"></span>
-    <div><h1>Premier League 2026/27</h1><p>RTFM Mods Prediction League</p></div>
+    <div><h1>${esc(CFG.season)}</h1><p>RTFM Mods Prediction League</p></div>
   </div>
   <p class="hero-facts"><span>Gameweek ${d.currentGw} of 38</span><span>${scored} of ${total6} Super 6 results in</span>${outstanding && cur && cur.done ? `<span>${outstanding} result${outstanding === 1 ? '' : 's'} outstanding this week</span>` : ''}</p>
 </section>
@@ -503,7 +509,7 @@
     <th class="xwide" title="Points from match picks">Match</th><th class="wide" title="Season bonus points">Bonus</th>
     <th class="xwide" title="Points in each of the last five completed gameweeks">Form</th>
     <th title="Points over the last five completed gameweeks">Last 5</th>
-    <th class="xwide" title="Super 6 picks entered so far">Picks</th><th>Pts</th>
+    <th class="xwide" title="Picks entered for Super 6 matches that have locked so far">Picks</th><th>Pts</th>
   </tr></thead>
   <tbody>${rows}</tbody>
 </table>
@@ -593,7 +599,7 @@
       const cx = L + slot * i + slot / 2;
       const v = w.pts[pid] || 0;
       const x0 = cx - bw / 2, y0 = y(v), yb = y(0), r = Math.min(4, bw / 2, yb - y0);
-      const fill = w.complete ? 'var(--bar)' : 'color-mix(in srgb, var(--bar) 35%, var(--panel))';
+      const fill = w.complete ? 'var(--bar)' : 'color-mix(in srgb, var(--bar) 55%, var(--panel))';
       if (v > 0) {
         g += `<path d="M${x0},${yb} V${y0 + r} Q${x0},${y0} ${x0 + r},${y0} H${x0 + bw - r} Q${x0 + bw},${y0} ${x0 + bw},${y0 + r} V${yb} Z" fill="${fill}"/>`;
       }
@@ -601,7 +607,7 @@
       if (i % every === 0 || i === n - 1) g += `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${w.gw}</text>`;
       g += `<rect class="hit" data-i="${i}" x="${L + slot * i}" y="${T}" width="${slot}" height="${H - T - B}" fill="transparent"/>`;
     });
-    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Points per gameweek bar chart">${g}<text x="${W - R}" y="${H - 8}" text-anchor="end" font-size="0">GW</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Points per gameweek bar chart">${g}</svg>`;
   }
 
   function bindChart() {
@@ -663,8 +669,8 @@
     const anyDone = six.some(isDone);
     if (anyDone) rows.sort((a, b) => b.tot - a.tot || a.p.name.localeCompare(b.p.name));
     const head = six.map((f) => {
-      const res = isDone(f) ? `${f.home_goals}-${f.away_goals}` : f.status === 'IN_PLAY' ? '<span class="live">Live</span>' : f.status === 'POSTPONED' ? 'P-P' : esc(hm(f.ko, timeMode() === 'uk' ? UK : LOCAL));
-      return `<th title="${esc(f.home)} v ${esc(f.away)}">${crest(f.home, 22)}<span class="vs">${code(f.home)} v ${code(f.away)}</span>${crest(f.away, 22)}<span class="res">${res}</span></th>`;
+      const res = isDone(f) ? `${f.home_goals}-${f.away_goals}` : f.status === 'IN_PLAY' ? '<span class="live">Live</span>' : f.status === 'POSTPONED' ? 'P-P' : `${esc(hm(f.ko, timeMode() === 'uk' ? UK : LOCAL))}<small>${timeMode() === 'uk' || localIsUK ? 'UK' : 'your time'}</small>`;
+      return `<th title="${esc(f.home)} v ${esc(f.away)}">${crest(f.home, 22)}<span class="vs">${esc(code(f.home))} v ${esc(code(f.away))}</span>${crest(f.away, 22)}<span class="res">${res}</span></th>`;
     }).join('');
     const body = rows.map((r) => `<tr class="${S.me && r.p.id === S.me.id ? 'me' : ''}"><td class="pn">${esc(r.p.name)}</td>${r.html}<td class="tot">${anyDone ? r.tot : ''}</td></tr>`).join('');
 
@@ -724,7 +730,10 @@ ${six.length ? `<div class="panel">
     const now = new Date();
     const zoneLine = localIsUK
       ? `Times are UK time (${esc(tzAbbr(now, UK))}).`
-      : `Times are in your time zone, ${esc(LOCAL.replace(/_/g, ' '))} (${esc(tzAbbr(now, LOCAL))}), with UK time (${esc(tzAbbr(now, UK))}) underneath. Days follow the UK matchday so everyone sees the same list.`;
+      : (tm === 'uk'
+        ? `Times are UK time (${esc(tzAbbr(now, UK))}), with your time (${esc(fmt(now, LOCAL, { timeZoneName: 'long' }).split(', ').pop())}) underneath.`
+        : `Times are in your time zone (${esc(fmt(now, LOCAL, { timeZoneName: 'long' }).split(', ').pop())}), with UK time (${esc(tzAbbr(now, UK))}) underneath.`)
+        + ' Days follow the UK matchday so everyone sees the same list.';
     let lockLine = '';
     if (lock) {
       lockLine = d.set.lock_mode === 'per_match'
@@ -755,7 +764,8 @@ ${rows || '<div class="panel pad"><p class="muted">No matches.</p></div>'}
       g.slots.push(s.slot);
     });
     const order = ['champion', 'top4', 'bottom3', 'golden_boot', 'playmaker', 'pots', 'young', 'golden_glove', 'manager', 'first_sacked', 'best_promoted'];
-    groups.sort((a, b) => (order.indexOf(a.key) + 99) % 199 - (order.indexOf(b.key) + 99) % 199);
+    const rankOf = (k) => { const i = order.indexOf(k); return i < 0 ? order.length : i; };
+    groups.sort((a, b) => rankOf(a.key) - rankOf(b.key));
     const max = groups.reduce((s, g) => s + g.each * g.slots.length, 0);
     const actual = Object.fromEntries(d.actual.map((a) => [a.group_key, a.accepted || []]));
     const hits = new Set(d.vbonus.map((b) => b.player_id + ':' + b.slot));
@@ -782,7 +792,7 @@ ${rows || '<div class="panel pad"><p class="muted">No matches.</p></div>'}
       const pts = g.slots.length > 1 ? `${g.each} pts each, ${g.slots.length} picks` : `${g.each} pts`;
       return `<div class="bonus-row">
         <div class="top2"><h3>${esc(g.label)}</h3><span class="pts">${pts}</span></div>
-        <div class="ans">${ans && ans.length ? `Answer: <b>${esc(ans[0])}</b>${g.key === 'top4' || g.key === 'bottom3' ? '' : ''}${ans.length > 1 && (g.key === 'top4' || g.key === 'bottom3') ? ', ' + ans.slice(1).map(esc).join(', ') : ''}` : '<span class="muted">Not settled yet</span>'}</div>
+        <div class="ans">${ans && ans.length ? `Answer: <b>${esc(ans[0])}</b>${ans.length > 1 && (g.key === 'top4' || g.key === 'bottom3') ? ', ' + ans.slice(1).map(esc).join(', ') : ''}` : '<span class="muted">Not settled yet</span>'}</div>
         <div class="chips">${chips || '<span class="muted small">No picks</span>'}</div>
       </div>`;
     }).join('');
@@ -801,7 +811,7 @@ ${rows || '<div class="panel pad"><p class="muted">No matches.</p></div>'}
 
     return `
 <div class="head"><h1>Season bonus</h1>
-<p class="lede">Up to ${max} extra points, settled as the season's awards are decided. They go straight into the Bonus column of the table.</p></div>
+<p class="lede">Up to ${max} extra points, settled as the season’s awards are decided. They go straight into the Bonus column of the table.</p></div>
 <div class="split">
   <div class="panel"><div class="panel-head"><h2>Bonus points so far</h2></div>
   <table class="btable"><thead><tr><th class="l">Player</th><th>Correct</th><th>Points</th></tr></thead><tbody>${totals}</tbody></table></div>
@@ -861,9 +871,9 @@ ${rows || '<div class="panel pad"><p class="muted">No matches.</p></div>'}
     const ms = d.getTime() - Date.now();
     if (ms <= 0) return '';
     const h = Math.floor(ms / 3600e3), m = Math.floor((ms % 3600e3) / 60e3);
-    if (h >= 48) return `in ${Math.floor(h / 24)} days`;
-    if (h >= 1) return `in ${h} h ${m} min`;
-    return `in ${m} min`;
+    if (h >= 48) return `in ${Math.floor(h / 24)}\u00a0days`;
+    if (h >= 1) return `in ${h}\u00a0h ${m}\u00a0min`;
+    return `in ${m}\u00a0min`;
   }
 
   function gwStepper(kind, gw) {
@@ -886,13 +896,21 @@ ${rows || '<div class="panel pad"><p class="muted">No matches.</p></div>'}
     const openCount = six.filter((f) => !isLocked(f)).length;
     let lede;
     if (!six.length) lede = 'The six for this week have not been picked yet.';
-    else if (allLocked) lede = `All picks for this week are locked. <a href="#/gw/${gw}">See everyone's picks</a>.`;
+    else if (allLocked) lede = `All picks for this week are locked. <a href="#/gw/${gw}">See everyone’s picks</a>.`;
     else if (perMatch) {
       const next = six.filter((f) => !isLocked(f))[0];
-      lede = `Each pick locks at its own kick-off. Next to lock is ${esc(next.home)} v ${esc(next.away)}, ${esc(untilText(next.ko))}: ${esc(whenText(next.ko))}.`;
+      lede = `Each pick locks at its own kick-off. Next to lock: ${esc(next.home)} v ${esc(next.away)}, ${esc(whenText(next.ko))}, ${esc(untilText(next.ko))}.`;
     } else lede = `Picks lock ${esc(untilText(lock))}, at the first Super 6 kick-off: ${esc(whenText(lock))}.`;
 
+    let lastDay = '';
     const rows = six.map((f) => {
+      const dk = dayKey(f.ko, UK);
+      const dayHead = dk !== lastDay ? `<div class="pday">${esc(fmt(f.ko, UK, { weekday: 'long', day: 'numeric', month: 'long' }))}</div>` : '';
+      lastDay = dk;
+      return dayHead + predRow(f);
+    }).join('');
+
+    function predRow(f) {
       const locked = isLocked(f);
       const pr = S.me ? d.predMap.get(S.me.id + ':' + f.id) : null;
       const done = isDone(f);
@@ -926,10 +944,10 @@ ${rows || '<div class="panel pad"><p class="muted">No matches.</p></div>'}
         ${editable ? `<div class="entry">${mine}</div>` : ''}
         ${extra.length ? `<div class="extra">${extra.join(' · ')}</div>` : ''}
       </div>`;
-    }).join('');
+    }
 
     let top = '';
-    if (!S.session) top = `<div class="notice"><span>Sign in to enter your picks. Other players' picks show once each match locks.</span><a class="btn sm" href="#/login">Sign in</a></div>`;
+    if (!S.session) top = `<div class="notice"><span>Sign in to enter your picks. Other players’ picks show once each match locks.</span><a class="btn sm" href="#/login">Sign in</a></div>`;
     let progress = '';
     if (S.me && six.length) {
       const have = six.filter((f) => d.predMap.get(S.me.id + ':' + f.id)).length;
@@ -940,7 +958,7 @@ ${rows || '<div class="panel pad"><p class="muted">No matches.</p></div>'}
 <div class="controls">${gwStepper('predict', gw)}<span class="grow"></span>${progress}</div>
 ${top}
 ${six.length ? `<div class="panel" id="predForm">${rows}</div>` : ''}
-${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both scores are in. Type a number and the cursor jumps to the next box, or use the buttons. You can change a pick as often as you like until that match locks; clear both boxes to remove it.</p>' : ''}`;
+${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both scores are in. Type a number and the cursor jumps to the next box, or use the buttons (use + for 10 or more). You can change a pick as often as you like until that match locks; clear both boxes to remove it.</p>' : ''}`;
   }
 
   // Autosave: each match saves on its own as soon as both scores are filled in.
@@ -987,11 +1005,20 @@ ${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both 
       status(row, 'ok', `${ICON.check}Saved ${esc(hm(new Date(), LOCAL))}`);
       updateProgress();
     }
+    // Saves for one row run one after another, each reading the boxes when it starts,
+    // so a slow earlier save can never land after a newer one.
+    let inFlight = 0;
+    const enqueue = (row) => {
+      inFlight++;
+      row._chain = (row._chain || Promise.resolve()).then(() => save(row)).catch((e) => status(row, 'err', 'Not saved: ' + esc(e.message || e)))
+        .finally(() => { inFlight--; if (!timers.size && !inFlight) S.dirty = false; });
+    };
     const schedule = (row, ms) => {
       S.dirty = true;
       clearTimeout(timers.get(row));
-      timers.set(row, setTimeout(async () => { timers.delete(row); await save(row); if (!timers.size) S.dirty = false; }, ms));
+      timers.set(row, setTimeout(() => { timers.delete(row); enqueue(row); }, ms));
     };
+    S.flushPicks = () => { timers.forEach((t, row) => { clearTimeout(t); enqueue(row); }); timers.clear(); };
     wrap.addEventListener('input', (ev) => {
       const inp = ev.target;
       if (!inp.matches('input.goal')) return;
@@ -1005,6 +1032,8 @@ ${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both 
       schedule(row, 700);
     });
     wrap.addEventListener('focusin', (ev) => { if (ev.target.matches('input.goal')) ev.target.select(); });
+    // A mouse click would otherwise undo the selection, so typing appended to the old score.
+    wrap.addEventListener('mouseup', (ev) => { if (ev.target.matches('input.goal')) { ev.preventDefault(); ev.target.select(); } });
     wrap.addEventListener('click', (ev) => {
       const b = ev.target.closest('button');
       if (!b) return;
@@ -1022,9 +1051,9 @@ ${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both 
         schedule(row, 150);
       }
     });
-    // Save anything pending if the page is being left.
-    window.addEventListener('pagehide', () => { timers.forEach((t, row) => { clearTimeout(t); save(row); }); });
   }
+  // Save anything pending if the page is being left (one listener for the whole app).
+  window.addEventListener('pagehide', () => { if (S.flushPicks) S.flushPicks(); });
   const lockMsg = (error) => (/row-level security|policy/i.test(error.message) ? 'this match has locked' : error.message);
 
   window.addEventListener('beforeunload', (ev) => { if (S.dirty) { ev.preventDefault(); ev.returnValue = ''; } });
@@ -1101,7 +1130,7 @@ ${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both 
       <option value="first_super6"${d.set.lock_mode !== 'per_match' ? ' selected' : ''}>All six at the first Super 6 kick-off</option>
       <option value="per_match"${d.set.lock_mode === 'per_match' ? ' selected' : ''}>Each match at its own kick-off</option>
     </select></label>
-    <label class="check"><input type="checkbox" name="bonus_public"${d.set.bonus_public === 'true' ? ' checked' : ''}> Show everyone's bonus picks on the Bonus tab</label>
+    <label class="check"><input type="checkbox" name="bonus_public"${d.set.bonus_public === 'true' ? ' checked' : ''}> Show everyone’s bonus picks on the Bonus tab</label>
   </div>
   </div><div class="panel-foot savebar"><button class="btn" type="submit">Save settings</button><span class="msg" role="status"></span></div>
 </form>
@@ -1168,7 +1197,7 @@ ${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both 
         if (b.dataset.res === 'feed') return dbErr(await sb.from('fixtures').update({ result_source: 'feed' }).eq('id', fid));
         const h = row.querySelector('[data-side=h]').value.trim(), a = row.querySelector('[data-side=a]').value.trim();
         const hn = Number(h), an = Number(a);
-        if (h === '' || a === '' || !Number.isInteger(hn) || !Number.isInteger(an) || hn < 0 || an < 0) return `Enter both scores for ${f.home} v ${f.away}.`;
+        if (h === '' || a === '' || !Number.isInteger(hn) || !Number.isInteger(an) || hn < 0 || an < 0 || hn > 30 || an > 30) return `Enter both scores (0 to 30) for ${f.home} v ${f.away}.`;
         if (!confirm(`Set ${f.home} ${hn}-${an} ${f.away} as the full-time result?`)) return 'Cancelled.';
         return dbErr(await sb.from('fixtures').update({ home_goals: hn, away_goals: an, status: 'FINISHED', result_source: 'admin' }).eq('id', fid));
       });

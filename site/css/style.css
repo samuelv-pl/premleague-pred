@@ -21,6 +21,7 @@
   --t1: #fcdee9; --t1-text: #a00040;   /* result: 1 */
   --gold: #fdf0ce; --silver: #ededf1; --bronze: #f7e3d2;
   --pink: #e90052;
+  --rank-podium: #b80045;
   --bar: #37003c;
   --head: #37003c;
   --up: #0a7a42;
@@ -50,6 +51,7 @@
   --t1: #4a1429; --t1-text: #ffc2d8;
   --gold: #372f1c; --silver: #2a2830; --bronze: #37281f;
   --pink: #ff4d8a;
+  --rank-podium: #ff7aa5;
   --bar: #c99ad2;
   --head: #2c0031;
   --up: #52d18f;
@@ -172,7 +174,6 @@ table { border-collapse: collapse; width: 100%; }
 .league th:first-child, .league td:first-child { padding-left: 18px; }
 .league th:last-child, .league td:last-child { padding-right: 18px; }
 .league .l { text-align: left; }
-.rank { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; font-weight: 800; font-size: 15px; color: var(--ink); }
 .league td.name { font-size: 17px; font-weight: 700; color: var(--ink); white-space: normal; width: 40%; }
 .league td.name .sub { display: block; font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 1px; }
 .league td.name .you { font-size: 12px; font-weight: 700; color: var(--brand-ink); background: var(--brand-soft); border-radius: 999px; padding: 2px 8px; margin-left: 8px; vertical-align: 2px; }
@@ -204,7 +205,7 @@ table { border-collapse: collapse; width: 100%; }
 .team .nm { overflow-wrap: anywhere; }
 .score { justify-self: center; display: grid; justify-items: center; gap: 2px; }
 .score b { display: inline-grid; place-items: center; min-width: 64px; height: 34px; padding: 0 8px; border-radius: var(--r); background: var(--brand); color: var(--on-brand); font-size: 17px; font-weight: 800; white-space: nowrap; }
-:root[data-theme="dark"] .score b { background: var(--bar); color: #1b0d1e; }
+:root[data-theme="dark"] .score:not(.v):not(.live):not(.pp) b { background: var(--bar); color: #1b0d1e; }
 .score small { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
 .score.v b { background: transparent; color: var(--muted); font-size: 14px; font-weight: 600; border: 1px solid var(--line); }
 .score.live b { background: transparent; color: var(--live); border: 1px solid currentColor; font-size: 13px; }
@@ -235,8 +236,8 @@ table { border-collapse: collapse; width: 100%; }
 .chart .key { display: flex; gap: 6px 18px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); margin: 8px 0 0; }
 .chart .key i { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; margin-right: 6px; border-radius: 3px; }
 .chart .key .k-bar { background: var(--bar); }
-.chart .key .k-prog { background: color-mix(in srgb, var(--bar) 35%, var(--panel)); }
-.chart .key .k-avg { background: var(--ink-2); height: 2px; vertical-align: 3px; }
+.chart .key .k-prog { background: color-mix(in srgb, var(--bar) 55%, var(--panel)); }
+.chart .key .k-avg { background: var(--pink); height: 3px; vertical-align: 3px; }
 .gwlist { list-style: none; margin: 0; padding: 0; }
 .gwlist li + li { border-top: 1px solid var(--line); }
 .gwlist li a { display: grid; grid-template-columns: 64px 1fr auto 18px; gap: 12px; align-items: center; padding: 14px 16px 14px 20px; text-decoration: none; color: inherit; }
@@ -370,7 +371,7 @@ table { border-collapse: collapse; width: 100%; }
   #fBonus .alist { grid-template-columns: 1fr 1fr; column-gap: 20px; }
   #fPlayers .alist { grid-template-columns: repeat(3, 1fr); }
 }
-@media (max-width: 480px) { .arow { grid-template-columns: 22px 1fr; } .arow .atime, .arow .ateams { grid-column: 2; } }
+@media (max-width: 480px) { .arow:not(.res) { grid-template-columns: 22px 1fr; } .arow:not(.res) .atime, .arow:not(.res) .ateams { grid-column: 2; } }
 
 /* ---------- forms ---------- */
 .login { max-width: 420px; margin: 8px auto 0; }
@@ -400,17 +401,15 @@ footer.foot p { margin: 0; max-width: 64ch; }
 .mark img { width: 30px; height: 30px; object-fit: contain; }
 
 /* ---------- league table: purple header, podium rows ---------- */
-.tablewrap { overflow: hidden; }
+.tablewrap { overflow-x: auto; }
 .league thead th { background: var(--head); color: #fff; font-weight: 700; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; border-bottom: 3px solid var(--pink); padding-top: 13px; padding-bottom: 11px; }
 .rank { display: inline-block; width: auto; height: auto; font-weight: 800; font-size: 17px; color: var(--muted); }
 .league tr.p1 td { background: var(--gold); } .league tr.p2 td { background: var(--silver); } .league tr.p3 td { background: var(--bronze); }
-.league tr.p1 .rank, .league tr.p2 .rank, .league tr.p3 .rank { color: var(--pink); }
-.league tr.me td.name { box-shadow: inset 4px 0 0 transparent; }
+.league tr.p1 .rank, .league tr.p2 .rank, .league tr.p3 .rank { color: var(--rank-podium); }
 .league td.tot { color: var(--brand-ink); }
 .league td.mvc { padding-left: 0; padding-right: 4px; width: 36px; }
 .league td.pos { width: 34px; }
 .picksc small { color: var(--muted); font-size: 12px; }
-.league tbody tr:hover td { filter: brightness(0.985); }
 
 /* ---------- crests ---------- */
 img.crest { width: 28px; height: 28px; object-fit: contain; flex: none; }
@@ -453,4 +452,16 @@ img.crest { width: 28px; height: 28px; object-fit: contain; flex: none; }
   .step .goal { width: 44px; }
   .controls .progress { width: 100%; }
 }
-@media (max-width: 639px) { .league td.name { width: auto; } .league td.name .sub { white-space: nowrap; } }
+@media (max-width: 639px) { .league td.name { width: auto; } .league td.name .sub { white-space: normal; } }
+
+/* ---------- QA fixes ---------- */
+.league tr.me td { box-shadow: inset 0 -2px 0 var(--brand-ink); }
+.pday { padding: 12px 20px 8px; font-size: 14px; font-weight: 700; color: var(--ink-2); background: var(--sunk); border-bottom: 1px solid var(--line); }
+.pday:first-child { border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.prow + .pday { border-top: 1px solid var(--line); }
+.qbtn, .seg button { min-height: 36px; }
+label.check { min-height: 36px; }
+.picks thead th .vs { font-size: 11px; }
+.picks thead th .crest.code { display: none; }
+.picks thead th .res small { display: block; font-size: 11px; font-weight: 600; color: var(--muted); }
+.aform .note, #predForm + .note { max-width: 66ch; }
