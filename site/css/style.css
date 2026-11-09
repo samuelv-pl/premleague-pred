@@ -26,7 +26,7 @@
   --bar: #37003c;
   --track: #ece6f0;
   --head: #37003c;
-  --up: #0a7a42;
+  --up: #086b3a;
   --down: #b4123f;
   --live: #c8103e;
   --dot: #ebdfee; --dot-text: #37003c;
@@ -111,7 +111,6 @@ p { text-wrap: pretty; }
 .bt b { font-size: 21px; font-weight: 800; letter-spacing: -0.015em; }
 .bt small { font-size: 13px; color: var(--on-brand-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 479px) { .bt-pl { display: none; } }
-@media (max-width: 379px) { .brand { gap: 10px; } .mark { width: 36px; height: 36px; } .mark img { width: 27px; height: 27px; } .bar { gap: 8px; } }
 .mast :focus-visible { outline-color: var(--on-brand); }
 .tools { display: flex; align-items: center; gap: 8px; flex: none; }
 .iconbtn { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 999px; border: 1px solid rgba(255,255,255,.28); background: transparent; color: var(--on-brand); cursor: pointer; transition: background-color .15s; }
@@ -123,13 +122,14 @@ p { text-wrap: pretty; }
 .who { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 4px; border-radius: 999px; border: 1px solid rgba(255,255,255,.28); color: var(--on-brand); text-decoration: none; font-weight: 600; font-size: 15px; }
 .who:hover { color: var(--on-brand); background: rgba(255,255,255,.12); }
 .who .av { width: 32px; height: 32px; border-radius: 999px; background: var(--on-brand); color: #37003c; display: grid; place-items: center; font-weight: 800; font-size: 14px; }
+@media (max-width: 379px) { .brand { gap: 10px; } .mark { width: 36px; height: 36px; } .mark img { width: 27px; height: 27px; } .bar { gap: 8px; } .tools { gap: 6px; } .who { gap: 6px; padding-right: 12px; } }
 nav.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 10px; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
 /* Once the script knows where the row is scrolled, fade only the edge with more tabs behind it. */
 nav.tabs:not(.more-r) { -webkit-mask-image: none; mask-image: none; }
 nav.tabs.more-l:not(.more-r) { -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px); mask-image: linear-gradient(90deg, transparent, #000 28px); }
 nav.tabs.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
 nav.tabs::-webkit-scrollbar { display: none; }
-nav.tabs a { flex: none; padding: 10px 12px 12px; border-radius: 6px 6px 0 0; text-decoration: none; font-weight: 600; font-size: 15px; color: var(--on-brand-2); border-bottom: 3px solid transparent; transition: color .15s, border-color .15s; }
+nav.tabs a { flex: none; padding: 10px 12px 12px; text-decoration: none; font-weight: 600; font-size: 15px; color: var(--on-brand-2); border-bottom: 3px solid transparent; transition: color .15s, border-color .15s; }
 nav.tabs a:hover { color: var(--on-brand); border-bottom-color: rgba(255,255,255,.28); }
 nav.tabs a:focus-visible { outline-offset: -3px; }
 nav.tabs a[aria-current="page"] { color: var(--on-brand); border-bottom-color: var(--pink); }
