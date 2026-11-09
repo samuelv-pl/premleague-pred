@@ -10,7 +10,7 @@
   const tip = document.getElementById('tip');
 
   if (!window.supabase || !CFG) {
-    app.innerHTML = '<div class="boot">Could not load the site. Check your connection and refresh.</div>';
+    app.innerHTML = '<div class="boot err">Could not load the site. Check your connection and refresh.</div>';
     return;
   }
   const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, {
@@ -311,12 +311,51 @@
     }
     const map = { gw: 'gameweeks' };
     const active = map[r.name] || r.name;
+    const oldNav = app.querySelector('nav.tabs');
+    const navX = oldNav ? oldNav.scrollLeft : 0;
     app.innerHTML = shell(active, body);
+    fitTabs(navX);
     bind();
+    if (r.name === 'predict') stickProgress();
     if (r.name === 'gameweeks') bindChart();
     if (r.name === 'predict') bindPredict();
     if (r.name === 'admin') bindAdmin();
     if ((r.name === 'login' || r.name === 'account') && !S.session) bindLogin();
+  }
+
+  // Phones: the tab row scrolls sideways. Keep its place between redraws, make sure the
+  // current tab is in view, and fade only the edge that has more tabs behind it.
+  function fitTabs(x) {
+    const nav = app.querySelector('nav.tabs');
+    if (!nav) return;
+    nav.scrollLeft = x;
+    const cur = nav.querySelector('[aria-current]');
+    if (cur && nav.scrollWidth > nav.clientWidth) {
+      const l = cur.getBoundingClientRect().left - nav.getBoundingClientRect().left + nav.scrollLeft;
+      const r = l + cur.offsetWidth, pad = 36;
+      if (l - pad < nav.scrollLeft) nav.scrollLeft = l - pad;
+      else if (r + pad > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = r + pad - nav.clientWidth;
+    }
+    const edges = () => {
+      const max = nav.scrollWidth - nav.clientWidth;
+      nav.classList.toggle('more-l', nav.scrollLeft > 2);
+      nav.classList.toggle('more-r', nav.scrollLeft < max - 2);
+    };
+    edges();
+    nav.addEventListener('scroll', edges, { passive: true });
+  }
+
+  // Phones and tablets: the picks counter sticks to the top of the screen while scrolling
+  // the six. A hairline shows once it is stuck.
+  let stickObs = null;
+  function stickProgress() {
+    if (stickObs) { stickObs.disconnect(); stickObs = null; }
+    const side = app.querySelector('.predside');
+    if (!side || !('IntersectionObserver' in window)) return;
+    stickObs = new IntersectionObserver(([e]) => {
+      side.classList.toggle('stuck', e.intersectionRatio < 1 && e.boundingClientRect.top < 1);
+    }, { threshold: [1] });
+    stickObs.observe(side);
   }
 
   function shell(active, body) {
@@ -332,13 +371,19 @@
     return `
 <header class="mast"><div class="wrap">
   <div class="bar">
-    <a class="brand" href="#/table"><span class="mark"><img class="emblem" src="${PL_EMBLEM}" alt="" width="30" height="30"></span><span class="bt"><b>Super 6</b><small>RTFM Mods · ${esc(CFG.season)}</small></span></a>
+    <a class="brand" href="#/table"><span class="mark"><img class="emblem" src="${PL_EMBLEM}" alt="" width="30" height="30"></span><span class="bt"><b>Super 6</b><small>RTFM Mods · ${seasonHTML()}</small></span></a>
     <div class="tools"><button class="iconbtn" type="button" data-act="theme" aria-label="${dark ? 'Switch to light mode' : 'Switch to dark mode'}" title="${dark ? 'Light mode' : 'Dark mode'}">${dark ? ICON.sun : ICON.moon}</button>${right}</div>
   </div>
   <nav class="tabs" aria-label="Sections">${tabs().map(([k, l]) => `<a href="#/${k}"${k === active ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
 </div></header>
 <main><div class="wrap">${warn.join('')}${body}</div></main>
-<footer class="foot"><div class="wrap"><p>RTFM Mods · ${esc(CFG.season)}. Updated ${S.loadedAt ? esc(hm(new Date(S.loadedAt), LOCAL)) : '-'}${S.data && S.data.syncedAt ? `, scores last checked ${esc(hm(S.data.syncedAt, LOCAL))}` : ''}. Scores come from football-data.org and run a few minutes behind the real game. This page refreshes every minute during matches.</p></div></footer>`;
+<footer class="foot"><div class="wrap"><p class="f-when"><span>RTFM Mods · ${esc(CFG.season)}.</span> <span>Updated ${S.loadedAt ? esc(hm(new Date(S.loadedAt), LOCAL)) : '-'}${S.data && S.data.syncedAt ? `, scores last checked ${esc(hm(S.data.syncedAt, LOCAL))}` : ''}.</span></p><p class="f-src">Scores come from football-data.org and run a few minutes behind the real game. This page refreshes every minute during matches.</p></div></footer>`;
+  }
+  // "Premier League 2026/27": phones drop the competition name so the season fits the masthead.
+  function seasonHTML() {
+    const s = String(CFG.season || '');
+    const m = s.match(/^(Premier League )(.+)$/);
+    return m ? `<span class="bt-pl">${esc(m[1])}</span>${esc(m[2])}` : esc(s);
   }
 
   function bind() {
@@ -1073,12 +1118,24 @@ ${pageHead('How it works', 'Six matches a week. Call the score.')}
       const have = six.filter((f) => d.predMap.get(S.me.id + ':' + f.id)).length;
       progress = `<div class="progress" id="predProg"><span class="pbar"><i class="pfill w${have}"></i></span><span><b>${have} of ${six.length}</b> picked</span></div>`;
     }
-    return `<div class="narrow">
-${pageHead('Predictions', `Gameweek ${gw}. ${lede}`, gwStepper('predict', gw))}
-${progress ? `<div class="controls">${progress}</div>` : ''}
+    // Beside the list on wide screens (a sticky bar on phones): your progress and the next lock.
+    let side = '';
+    if (progress) {
+      const nextOpen = six.filter((f) => !isLocked(f))[0];
+      let lockLine = '';
+      if (nextOpen) {
+        const at = perMatch ? nextOpen.ko : lock;
+        lockLine = `<p class="ps-lock">${ICON.clock}<span><b>${perMatch ? 'Next lock' : 'Picks lock'} ${esc(untilText(at))}</b>${perMatch ? `<span>${esc(nextOpen.home)} v ${esc(nextOpen.away)}</span>` : ''}<span>${esc(whenText(at))}</span></span></p>`;
+      }
+      side = `<aside class="predside" aria-label="Your picks this week"><h2 class="ps-t">Your picks</h2>${progress}${lockLine}</aside>`;
+    }
+    return `<div class="${side ? 'predlay' : 'narrow'}">
+<div class="pl-head">${pageHead('Predictions', `Gameweek ${gw}. ${lede}`, gwStepper('predict', gw))}</div>
+${side}
+<div class="pl-main">
 ${top}
-${six.length ? `<div class="panel" id="predForm">${rows}</div>` : ''}
-${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both scores are in. Type a number and the cursor jumps to the next box, or use the buttons (use + for 10 or more). You can change a pick as often as you like until that match locks; clear both boxes to remove it.</p>' : ''}</div>`;
+${six.length ? `<div class="panel bleed" id="predForm">${rows}</div>` : ''}
+${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both scores are in. Type a number and the cursor jumps to the next box, or use the buttons (use + for 10 or more). You can change a pick as often as you like until that match locks; clear both boxes to remove it.</p>' : ''}</div></div>`;
   }
 
   // Autosave: each match saves on its own as soon as both scores are filled in.
@@ -1422,6 +1479,6 @@ ${pageHead('Your account', `Signed in as ${esc(name || S.session.user.email)}.`)
   }
 
   boot().catch((e) => {
-    app.innerHTML = `<div class="boot">Something went wrong: ${esc(e.message || e)}</div>`;
+    app.innerHTML = `<div class="boot err">Something went wrong: ${esc(e.message || e)}</div>`;
   });
 })();
