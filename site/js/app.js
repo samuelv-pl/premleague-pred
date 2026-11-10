@@ -83,6 +83,21 @@
     clock: svg('M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 5v3.2l2.2 1.4'),
     lock: svg('M4.5 7.5h7v6h-7zM6 7.5V5.5a2 2 0 0 1 4 0v2'),
     same: svg('M5 8h6'),
+    chev: svg('M4.5 6.5L8 10l3.5-3.5'),
+    close: svg('M4.5 4.5l7 7M11.5 4.5l-7 7'),
+  };
+  // Bottom bar icons: drawn on a 24 grid, one stroke weight.
+  const nsvg = (d) => `<svg class="ni" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`;
+  const NAV_ICON = {
+    table: nsvg('M4 5.5h16M4 10.5h16M4 15.5h16M4 20.5h10M7.5 3v19'),
+    predict: nsvg('M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3zM14 8l3 3'),
+    gameweeks: nsvg('M4 20h16M6.5 20v-6M11 20V8M15.5 20v-9M20 20V5'),
+    fixtures: nsvg('M4.5 6.5h15v13h-15zM4.5 10.5h15M8.5 4v4M15.5 4v4'),
+    more: nsvg('M5 12h.01M12 12h.01M19 12h.01'),
+    bonus: nsvg('M8 3.5h8v5a4 4 0 0 1-8 0zM8 5H5v1.5A3 3 0 0 0 8 9.5M16 5h3v1.5a3 3 0 0 1-3 3M12 12.5v4M8.5 20.5h7M9.5 16.5h5v4h-5z'),
+    rules: nsvg('M6 3.5h9l3 3v14H6zM9 10h6M9 13.5h6M9 17h4'),
+    admin: nsvg('M12 3.5l7 3v5c0 4.2-3 7.6-7 9-4-1.4-7-4.8-7-9v-5zM9 12l2 2 4-4'),
+    account: nsvg('M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5a7.5 7.5 0 0 1 15 0'),
   };
   // Page heading: title and one status line, with page controls (gameweek stepper) beside it.
   function pageHead(title, lede, right) {
@@ -127,6 +142,8 @@
     }
   }, true);
   const code = (t) => CODES[t] || String(t).slice(0, 3).toUpperCase();
+  // "Adam", "Adam and Notty", "Adam, Hockey and Notty"
+  const andList = (a) => (a.length > 1 ? a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1] : a.join(''));
 
   // Same rule as public.score() in the database.
   function score(ph, pa, ah, aa) {
@@ -275,7 +292,7 @@
 
   // ---------------------------------------------------------------- shell
   function tabs() {
-    const t = [['table', 'Table'], ['predict', 'Predictions'], ['gameweeks', 'Gameweeks'], ['fixtures', 'Fixtures'], ['bonus', 'Bonus'], ['rules', 'Rules']];
+    const t = [['table', 'Table'], ['predict', 'Picks'], ['gameweeks', 'Gameweeks'], ['fixtures', 'Fixtures'], ['bonus', 'Bonus'], ['rules', 'Rules']];
     if (S.me && S.me.is_admin) t.push(['admin', 'Admin']);
     return t;
   }
@@ -304,6 +321,7 @@
       case 'fixtures': body = viewFixtures(r.arg ? parseInt(r.arg, 10) : S.data.currentGw); break;
       case 'bonus': body = viewBonus(); break;
       case 'rules': body = viewRules(); break;
+      case 'more': body = viewMore(); break;
       case 'login': body = S.session ? viewAccount() : viewLogin(); break;
       case 'account': body = S.session ? viewAccount() : viewLogin(); break;
       case 'admin': body = S.me && S.me.is_admin ? viewAdmin(r.arg ? parseInt(r.arg, 10) : openGw()) : viewTable(); break;
@@ -311,38 +329,15 @@
     }
     const map = { gw: 'gameweeks' };
     const active = map[r.name] || r.name;
-    const oldNav = app.querySelector('nav.tabs');
-    const navX = oldNav ? oldNav.scrollLeft : 0;
     app.innerHTML = shell(active, body);
-    fitTabs(navX);
     bind();
+    if (r.name === 'table') bindTable();
+    if (r.name === 'gw') bindGw();
     if (r.name === 'predict') stickProgress();
     if (r.name === 'gameweeks') bindChart();
     if (r.name === 'predict') bindPredict();
     if (r.name === 'admin') bindAdmin();
     if ((r.name === 'login' || r.name === 'account') && !S.session) bindLogin();
-  }
-
-  // Phones: the tab row scrolls sideways. Keep its place between redraws, make sure the
-  // current tab is in view, and fade only the edge that has more tabs behind it.
-  function fitTabs(x) {
-    const nav = app.querySelector('nav.tabs');
-    if (!nav) return;
-    nav.scrollLeft = x;
-    const cur = nav.querySelector('[aria-current]');
-    if (cur && nav.scrollWidth > nav.clientWidth) {
-      const l = cur.getBoundingClientRect().left - nav.getBoundingClientRect().left + nav.scrollLeft;
-      const r = l + cur.offsetWidth, pad = 36;
-      if (l - pad < nav.scrollLeft) nav.scrollLeft = l - pad;
-      else if (r + pad > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = r + pad - nav.clientWidth;
-    }
-    const edges = () => {
-      const max = nav.scrollWidth - nav.clientWidth;
-      nav.classList.toggle('more-l', nav.scrollLeft > 2);
-      nav.classList.toggle('more-r', nav.scrollLeft < max - 2);
-    };
-    edges();
-    nav.addEventListener('scroll', edges, { passive: true });
   }
 
   // Phones and tablets: the picks counter sticks to the top of the screen while scrolling
@@ -365,9 +360,15 @@
     if (S.session && S.data && !S.me) warn.push('<div class="notice err">Your login is not linked to a player yet. Ask Sam to check that your player email matches your login.</div>');
     const initial = S.me ? S.me.name.slice(0, 1).toUpperCase() : '?';
     const right = S.session
-      ? `<a class="who" href="#/account" title="Your account"><span class="av">${esc(initial)}</span>${esc(S.me ? S.me.name : 'Account')}</a>`
+      ? `<a class="who" href="#/account" title="Your account"><span class="av">${esc(initial)}</span><span class="wn">${esc(S.me ? S.me.name : 'Account')}</span></a>`
       : `<a class="signin" href="#/login">Sign in</a>`;
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    // Phones get a bottom bar: the four places people go every matchday, and More for the rest.
+    const inMore = ['more', 'bonus', 'rules', 'admin', 'account', 'login'].includes(active);
+    const dock = [['table', 'Table'], ['predict', 'Picks'], ['gameweeks', 'Gameweeks'], ['fixtures', 'Fixtures'], ['more', 'More']]
+      .map(([k, l]) => `<a href="#/${k}"${k === active || (k === 'more' && inMore) ? ' aria-current="page"' : ''}>${NAV_ICON[k]}<span>${l}</span></a>`).join('');
+    const upd = S.loadedAt ? `Updated ${esc(hm(new Date(S.loadedAt), LOCAL))}` : '';
+    const chk = S.data && S.data.syncedAt ? `scores checked ${esc(hm(S.data.syncedAt, LOCAL))}` : '';
     return `
 <header class="mast"><div class="wrap">
   <div class="bar">
@@ -377,7 +378,8 @@
   <nav class="tabs" aria-label="Sections">${tabs().map(([k, l]) => `<a href="#/${k}"${k === active ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
 </div></header>
 <main><div class="wrap">${warn.join('')}${body}</div></main>
-<footer class="foot"><div class="wrap"><p class="f-when"><span>RTFM Mods · ${esc(CFG.season)}.</span> <span>Updated ${S.loadedAt ? esc(hm(new Date(S.loadedAt), LOCAL)) : '-'}${S.data && S.data.syncedAt ? `, scores last checked ${esc(hm(S.data.syncedAt, LOCAL))}` : ''}.</span></p><p class="f-src">Scores come from football-data.org and run a few minutes behind the real game. This page refreshes every minute during matches.</p></div></footer>`;
+<footer class="foot"><div class="wrap"><p><span>${[upd, chk].filter(Boolean).join(', ')}.</span> <span>Scores from football-data.org run a few minutes behind.</span></p></div></footer>
+<nav class="dock" aria-label="Sections">${dock}</nav>`;
   }
   // "Premier League 2026/27": phones drop the competition name so the season fits the masthead.
   function seasonHTML() {
@@ -496,13 +498,35 @@
     return { gw: f.gw, at: lockTime(f.gw), fixture: null };
   }
 
-  function formSVG(vals) {
-    const W = 74, H = 22, bw = 11, gap = 4;
-    const bars = vals.map((v, i) => {
-      const h = Math.max(3, Math.round((Math.min(v, 30) / 30) * H));
-      return `<rect x="${i * (bw + gap)}" y="0" width="${bw}" height="${H}" rx="3" fill="var(--track)"/><rect x="${i * (bw + gap)}" y="${H - h}" width="${bw}" height="${h}" rx="3" fill="var(--bar)"><title>${v} pts</title></rect>`;
+  // Form: points in each of the last five complete weeks, as numbers. A filled box marks
+  // a week this player topped (shared tops count).
+  function formHTML(weeks, pid) {
+    return `<span class="fm" aria-label="Last ${weeks.length} complete gameweeks: ${weeks.map((w) => w.pts[pid] || 0).join(', ')} points">${weeks.map((w) => {
+      const v = w.pts[pid] || 0;
+      const top = w.done && v === w.best;
+      return `<i class="${top ? 'top' : ''}" title="GW${w.gw}: ${v} pts${top ? ', top score that week' : ''}">${v}</i>`;
+    }).join('')}</span>`;
+  }
+
+  // One player's season, shown when their row is opened: the breakdown and every week so far.
+  function playerDetail(b, weeks, picks, picksTotal) {
+    const pid = b.player_id;
+    const max = Math.max(10, ...weeks.map((w) => w.best));
+    const stat = (n, l, t) => `<div class="ds"><b>${n}</b><span>${l}</span>${t ? `<small>${t}</small>` : ''}</div>`;
+    const cols = weeks.map((w) => {
+      const v = w.pts[pid] || 0;
+      const top = v === w.best && w.done;
+      const h = Math.round((v / max) * 100);
+      return `<li class="${top ? 'top' : ''}${w.complete ? '' : ' prog'}" title="GW${w.gw}: ${v} pts${top ? (w.complete ? ', top score that week' : ', top so far') : ''}${w.complete ? '' : ' (in progress)'}"><b>${v}</b><span class="dbar"><i class="h${Math.min(100, Math.max(0, Math.round(h / 5) * 5))}"></i></span><a href="#/gw/${w.gw}">${w.gw}</a></li>`;
     }).join('');
-    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Last ${vals.length} gameweeks: ${vals.join(', ')} points">${bars}</svg>`;
+    const tops = weeks.filter((w) => w.complete && (w.pts[pid] || 0) === w.best).length;
+    return `<div class="det-in">
+      <div class="dstats">
+        ${stat(b.exact, 'Exact', '5 pts each')}${stat(b.gd, 'Goal diff.', '3 pts each')}${stat(b.outcome, 'Result', '1 pt each')}
+        ${stat(b.match_pts, 'Match pts', '')}${stat(b.bonus, 'Bonus', '')}${stat(`${picks}<small>/${picksTotal}</small>`, 'Picks made', '')}
+      </div>
+      <div class="dweeks"><p class="dh">Points by gameweek${tops ? `<span class="muted"> · top score in ${tops} week${tops === 1 ? '' : 's'}</span>` : ''}</p><ol class="dcols">${cols}</ol></div>
+    </div>`;
   }
 
   function viewTable() {
@@ -514,8 +538,8 @@
     const weeks = gwSummary();
     const completeWeeks = weeks.filter((w) => w.complete);
     const lastFive = completeWeeks.slice(-5);
+    const started = weeks.filter((w) => w.done > 0);
     const cur = weeks[d.currentGw - 1];
-    const outstanding = cur ? cur.six.filter((f) => !isDone(f)).length : 0;
     const live = livePoints();
     const nLive = d.fixtures.filter((f) => f.super6 && isLive(f)).length;
     // As in the Sheet: picks made (including future ones) out of every Super 6 match.
@@ -538,54 +562,60 @@
       const gap = second ? lead.total - second.total : 0;
       const leaders = d.board.filter((b) => b.rank === 1).map((b) => b.name);
       leadLine = leaders.length > 1
-        ? `<b>${ICON.trophy}${leaders.map(esc).join(' and ')} lead</b>${line(`Level on ${lead.total} points`)}`
-        : `<b>${ICON.trophy}${esc(lead.name)} leads</b>${line(`${lead.total} points, ${gap ? `${gap} clear of ${esc(second.name)}` : `ahead of ${esc(second.name)} on the tie-break`}`)}`;
+        ? `<b>${ICON.trophy}${andList(leaders.map(esc))} share the lead</b>${line(`Level on ${lead.total} points`)}`
+        : `<b>${ICON.trophy}${esc(lead.name)} ${gap ? `leads by ${gap}` : 'leads on the tie-break'}</b>${line(`${lead.total} points to ${esc(second.name)}’s ${second.total}`)}`;
     }
     let weekLine = '';
     if (cur && cur.six.length) {
       weekLine = cur.done
-        ? `<b>${ICON.bars}GW${cur.gw}: ${cur.done} of ${cur.six.length} results in</b>${line(`${esc(cur.leaders.join(', '))} ${cur.complete ? 'won it' : (cur.leaders.length > 1 ? 'lead' : 'leads')} with ${cur.best}`)}${act(`#/gw/${cur.gw}`, 'See the picks')}`
+        ? `<b>${ICON.bars}GW${cur.gw}: ${cur.complete ? 'all six in' : `${cur.done} of ${cur.six.length} in`}</b>${line(`${esc(andList(cur.leaders))} ${cur.complete ? (cur.leaders.length > 1 ? 'top the week' : 'tops the week') : (cur.leaders.length > 1 ? 'lead' : 'leads')} with ${cur.best}`)}${act(`#/gw/${cur.gw}`, 'See everyone’s picks')}`
         : `<b>${ICON.bars}GW${cur.gw} starts ${esc(shortDay(cur.six.slice().sort((x, y) => x.ko - y.ko)[0].ko, LOCAL))}</b>${act(`#/fixtures/${cur.gw}`, 'See the fixtures')}`;
     }
     const dl = nextDeadline();
-    let dlLine = `<b>${ICON.clock}No open picks</b>${line('The season is done')}`;
+    let dlLine = `<b>${ICON.clock}No open picks</b>${line('The season is over')}`;
     if (dl) {
       const what = dl.fixture ? `${esc(dl.fixture.home)} v ${esc(dl.fixture.away)}` : `GW${dl.gw} picks`;
-      const ukPart = localIsUK || sameClock(dl.at) ? '' : ` <span class="muted">(${esc(hm(dl.at, UK))} UK)</span>`;
+      const ukPart = localIsUK || sameClock(dl.at) ? '' : ` <span class="muted">(${esc(hm(dl.at, UK))} UK)</span>`;
       let cta = '';
       if (!S.session) cta = act('#/login', 'Sign in to pick');
       else if (S.me) {
         const six = d.fixtures.filter((f) => f.gw === dl.gw && f.super6);
         const mine = six.filter((f) => d.predMap.get(S.me.id + ':' + f.id)).length;
-        cta = act(`#/predict/${dl.gw}`, mine === six.length ? 'All six picked, review' : `${mine} of ${six.length} picked, pick now`);
+        cta = act(`#/predict/${dl.gw}`, mine === six.length ? 'All six picked. Review' : `${mine} of ${six.length} picked. Pick now`);
       }
       dlLine = `<b>${ICON.clock}Next lock ${esc(untilText(dl.at))}</b>${line(what)}${line(`${esc(shortDay(dl.at, LOCAL))}, ${esc(hm(dl.at, LOCAL))}${ukPart}`)}${cta}`;
     }
 
+    const open = S.openRows || (S.openRows = new Set());
+    const leadTotal = lead ? lead.total : 0;
     const rows = d.board.map((b) => {
       let mv = `<span class="mv same" title="No earlier week to compare">${ICON.same}<span class="sr">No change</span></span>`;
       if (before && before[b.player_id] != null) {
         const diff = before[b.player_id] - b.rank;
-        if (diff > 0) mv = `<span class="mv up" title="Up ${diff} since GW${base}">${ICON.up}${diff}</span>`;
-        else if (diff < 0) mv = `<span class="mv down" title="Down ${-diff} since GW${base}">${ICON.down}${-diff}</span>`;
+        if (diff > 0) mv = `<span class="mv up" title="Up ${diff} since GW${base}">${ICON.up}${diff}<span class="sr"> up</span></span>`;
+        else if (diff < 0) mv = `<span class="mv down" title="Down ${-diff} since GW${base}">${ICON.down}${-diff}<span class="sr"> down</span></span>`;
         else mv = `<span class="mv same" title="No change since GW${base}">${ICON.same}<span class="sr">No change</span></span>`;
       }
       const me = S.me && S.me.id === b.player_id;
       const podium = b.rank <= 3 ? ` p${b.rank}` : '';
-      const form = lastFive.map((w) => w.pts[b.player_id] || 0);
-      return `<tr class="${me ? 'me' : ''}${podium}">
+      const behind = leadTotal - b.total;
+      const gapTxt = behind ? `${behind} behind` : (b.rank === 1 && d.board.filter((x) => x.rank === 1).length === 1 ? 'Top' : 'Level');
+      const isOpen = open.has(b.player_id);
+      const did = 'pd-' + esc(b.player_id);
+      return `<tr class="prow-l${me ? ' me' : ''}${podium}${isOpen ? ' open' : ''}" data-pid="${esc(b.player_id)}">
         <td class="pos"><span class="rank">${b.rank}</span></td>
         <td class="mvc">${mv}</td>
-        <td class="l name"><span class="nmx">${esc(b.name)}${me ? '<span class="you">You</span>' : ''}</span><span class="sub"><span>${b.exact} exact</span><span>${b.gd} GD</span><span>${b.outcome} result${b.outcome === 1 ? '' : 's'}</span>${b.bonus ? `<span>${b.bonus} bonus</span>` : ''}</span></td>
-        <td class="wide">${b.exact}</td><td class="wide">${b.gd}</td><td class="wide">${b.outcome}</td>
-        <td class="xwide">${b.match_pts}</td><td class="wide">${b.bonus}</td>
-        <td class="xwide formc">${form.length ? formSVG(form) : ''}</td>
-        <td>${b.last5}</td>
+        <td class="l name"><button type="button" class="rowbtn" aria-expanded="${isOpen}" aria-controls="${did}"><span class="nmx">${esc(b.name)}${me ? '<span class="you">You</span>' : ''}</span><span class="sub">${gapTxt}</span>${ICON.chev}</button></td>
+        <td class="wide">${b.exact}</td><td class="wide">${b.gd}</td><td class="wide">${b.outcome}</td><td class="wide">${b.bonus}</td>
         <td class="xwide picksc">${picks[b.player_id] || 0}<small> / ${picksTotal}</small></td>
+        <td class="xwide formc">${lastFive.length ? formHTML(lastFive, b.player_id) : ''}</td>
+        <td class="l5">${b.last5}</td>
+        <td class="wide gapc">${behind ? `−${behind}` : '<span class="muted">–</span>'}</td>
         <td class="tot">${b.total}${live[b.player_id] ? `<small class="livetag" title="${live[b.player_id]} provisional point${live[b.player_id] === 1 ? '' : 's'} from matches in play, not counted until full time">+${live[b.player_id]} live</small>` : ''}</td>
-      </tr>`;
+      </tr>
+      <tr class="det${me ? ' me' : ''}" id="${did}"${isOpen ? '' : ' hidden'}><td colspan="12">${playerDetail(b, started, picks[b.player_id] || 0, picksTotal)}</td></tr>`;
     }).join('');
-    const facts = `Gameweek ${d.currentGw} of 38. ${scored} of ${total6} Super 6 results in${outstanding && cur && cur.done ? `, ${outstanding} still to play this week` : ''}.${nLive ? ` <span class="livedot"></span>${nLive} Super\u00a06 match${nLive === 1 ? '' : 'es'} live: points marked live count once the game ends.` : ''}`;
+    const facts = `Gameweek ${d.currentGw} of 38 · ${scored} of ${total6} Super 6 results in${nLive ? `<span class="liveline"><span class="livedot"></span>${nLive} live now. Live points count at full time.</span>` : ''}`;
     return `
 ${pageHead('League table', facts)}
 <section class="summary panel" aria-label="At a glance">
@@ -596,17 +626,35 @@ ${pageHead('League table', facts)}
 <div class="panel tablewrap">
 <table class="league">
   <thead><tr>
-    <th class="l" title="Position">#</th><th class="l"><span class="sr">Move</span></th><th class="l">Player</th>
+    <th class="l pos" title="Position">#</th><th class="l mvc"><span class="sr">Move</span></th><th class="l">Player</th>
     <th class="wide" title="Exact scores, 5 points each">Exact</th><th class="wide" title="Correct goal difference, 3 points each">GD</th><th class="wide" title="Correct result, 1 point each">Result</th>
-    <th class="xwide" title="Points from match picks">Match</th><th class="wide" title="Season bonus points">Bonus</th>
-    <th class="xwide formh" title="Points in each of the last five completed gameweeks">Form</th>
-    <th title="Points over the last five completed gameweeks">Last 5</th>
-    <th class="xwide" title="Super 6 picks entered, out of every Super 6 match this season">Picks</th><th>Pts</th>
+    <th class="wide" title="Season bonus points">Bonus</th>
+    <th class="xwide" title="Super 6 picks made, out of every Super 6 match this season">Picks</th>
+    <th class="xwide formh" title="Points in each of the last five complete gameweeks">Form</th>
+    <th class="l5" title="Points over the last five complete gameweeks">Last 5</th>
+    <th class="wide" title="Points behind the leader">Gap</th><th class="tot">Pts</th>
   </tr></thead>
   <tbody>${rows}</tbody>
 </table>
 </div>
-<p class="note">Ties are split on exact scores, then correct goal differences. Arrows show moves since the end of GW${base != null ? base : '-'}. Last 5 counts the last five gameweeks with all six results in. Bonus points arrive as the season awards are settled; see <a href="#/bonus">Bonus</a>.</p>`;
+<p class="note">Open a player to see their season. Ties split on exact scores, then goal differences. Arrows show moves since GW${base != null ? base : '-'}. Last 5 and Form cover the last five complete gameweeks.</p>`;
+  }
+
+  // Open or close a player's season row. Remembered across refreshes until the page is reloaded.
+  function bindTable() {
+    const tb = app.querySelector('table.league tbody');
+    if (!tb) return;
+    tb.addEventListener('click', (ev) => {
+      if (ev.target.closest('a')) return;
+      const tr = ev.target.closest('tr.prow-l');
+      if (!tr) return;
+      const pid = tr.getAttribute('data-pid');
+      const det = tr.nextElementSibling;
+      const btn = tr.querySelector('.rowbtn');
+      const on = det.hidden;
+      det.hidden = !on; tr.classList.toggle('open', on); btn.setAttribute('aria-expanded', String(on));
+      if (on) S.openRows.add(pid); else S.openRows.delete(pid);
+    });
   }
 
   // ---------------------------------------------------------------- gameweeks
@@ -636,7 +684,8 @@ ${pageHead('League table', facts)}
     let pid = store.get('s6.chartPlayer', active[0] && active[0].id);
     if (!active.some((p) => p.id === pid)) pid = active[0] && active[0].id;
     const who = d.byId[pid];
-    const opts = active.map((p) => `<option value="${esc(p.id)}"${p.id === pid ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+    const meId = S.me && active.some((p) => p.id === S.me.id) ? S.me.id : null;
+    const opts = active.map((p) => `<option value="${esc(p.id)}"${p.id === pid ? ' selected' : ''}>${esc(p.name)}${p.id === meId ? ' (you)' : ''}</option>`).join('');
 
     const nextUp = weeks.find((w) => w.six.length && !w.done);
     const shown = weeks.filter((w) => w.six.length && (w.done || w === nextUp));
@@ -644,83 +693,182 @@ ${pageHead('League table', facts)}
       let state, winner;
       if (w.complete) {
         state = '';
-        winner = `<b>${w.leaders.map(esc).join(', ')}</b> won with ${w.best}`;
+        winner = `<b>${w.leaders.map(esc).join(', ')}</b> <span class="muted">${w.best}\u00a0pts</span>`;
       } else if (w.done) {
-        state = `<span class="pill">${w.done}/6 in</span>`;
-        winner = `<b>${w.leaders.map(esc).join(', ')}</b> leading on ${w.best}`;
+        state = `<span class="pill">${w.done} of 6 in</span>`;
+        winner = `<b>${w.leaders.map(esc).join(', ')}</b> <span class="muted">${w.best}\u00a0pts so far</span>`;
       } else {
-        state = '<span class="pill">to play</span>';
-        winner = w.lock ? `<span class="muted">${d.set.lock_mode === 'per_match' ? 'First kick-off' : 'Picks lock'} ${esc(whenText(w.lock))}</span>` : '';
+        state = '<span class="pill">Next</span>';
+        winner = w.lock ? `<span class="muted">${d.set.lock_mode === 'per_match' ? 'Starts' : 'Picks lock'} ${esc(whenText(w.lock))}</span>` : '';
       }
       const mine = S.me && w.done ? `<small>You</small><b>${w.pts[S.me.id] != null ? w.pts[S.me.id] : 0}</b>` : '';
       return `<li><a href="#/gw/${w.gw}"><span class="n">GW${w.gw}</span><span class="w">${winner}${state}</span><span class="mine">${mine}</span><span class="go">${ICON.next}</span></a></li>`;
     }).join('');
 
+    // Running totals of match points, week by week, for the table under the race chart.
+    const cum = raceData(started, active);
+    const tview = started.length ? `<details class="tview"><summary>Show as a table</summary><div class="tv-scroll"><table class="tvt"><thead><tr><th scope="col" class="l">Player</th>${started.map((w) => `<th scope="col">GW${w.gw}</th>`).join('')}</tr></thead><tbody>${active.map((p) => `<tr${p.id === meId ? ' class="me"' : ''}><th scope="row" class="l">${esc(p.name)}</th>${cum[p.id].map((v) => `<td>${v}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>` : '';
+    const legend = `<div class="key"><span><i class="k-sel"></i>${esc(who ? who.name : '')}</span>${meId && meId !== pid ? `<span><i class="k-you"></i>${esc(S.me.name)} (you)</span>` : ''}<span><i class="k-rest"></i>Everyone else</span></div>`;
+
     return `
-${pageHead('Gameweeks', 'Points per week, and who took each one.')}
-<div class="panel">
-  <div class="panel-head"><h2>Points per gameweek</h2><label class="sr" for="chartPlayer">Player</label><select id="chartPlayer" data-chart-player class="sel">${opts}</select></div>
-  <div class="chart">
-  ${started.length ? chartSVG(started, pid) : '<p class="note">No results yet.</p>'}
-  <div class="key"><span><i class="k-bar"></i>${esc(who ? who.name : '')}</span><span><i class="k-avg"></i>League average</span><span><i class="k-prog"></i>Week still in progress</span></div>
+${pageHead('Gameweeks', 'The race so far, and who topped each week.')}
+<div class="controls"><label class="ctl" for="chartPlayer">Highlight<select id="chartPlayer" data-chart-player class="sel">${opts}</select></label></div>
+<div class="charts">
+<section class="panel">
+  <div class="panel-head"><h2>Title race</h2><span class="muted small">Match points, running total</span></div>
+  <div class="chart" data-chart="race">
+  ${started.length ? raceSVG(started, active, cum, pid, meId) + legend : '<p class="note">No results yet.</p>'}
+  ${tview}
   </div>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Points each week</h2><span class="muted small">${esc(who ? who.name : '')}</span></div>
+  <div class="chart" data-chart="week">
+  ${started.length ? chartSVG(started, pid) : '<p class="note">No results yet.</p>'}
+  <div class="key"><span><i class="k-bar"></i>${esc(who ? who.name : '')}</span><span><i class="k-avg"></i>League average</span>${started.some((w) => !w.complete) ? '<span><i class="k-prog"></i>Week in progress</span>' : ''}</div>
+  </div>
+</section>
 </div>
 <h2 class="section-title">Week by week</h2>
 <ul class="gwlist panel">${list}</ul>
 <p class="note">Later gameweeks are on the <a href="#/fixtures">fixtures</a> page.</p>`;
   }
 
-  let chartWeeks = null;
+  // Each player's running total of match points after each started week (from v_gw_points).
+  function raceData(weeks, people) {
+    const out = {};
+    people.forEach((p) => {
+      let t = 0;
+      out[p.id] = weeks.map((w) => (t += (w.pts[p.id] || 0)));
+    });
+    return out;
+  }
+
+  const chartWidth = () => Math.round(Math.max(288, Math.min(1176, window.innerWidth - (window.innerWidth >= 900 ? 64 : 32)) - (window.innerWidth >= 560 ? 40 : 28)));
+  let chartWeeks = null, raceState = null;
+  // Title race: one line per player. The highlighted player and you carry colour; everyone else is quiet grey.
+  function raceSVG(weeks, people, cum, pid, meId) {
+    const W = chartWidth(), H = W < 500 ? 230 : 300, L = 34, R = W < 500 ? 76 : 96, T = 12, B = 26;
+    const n = weeks.length;
+    const max = Math.max(20, ...people.map((p) => cum[p.id][n - 1]));
+    const step = max > 160 ? 40 : 20;
+    const top = Math.ceil(max / step) * step;
+    const x = (i) => L + (n === 1 ? (W - L - R) / 2 : ((W - L - R) * i) / (n - 1));
+    const y = (v) => T + (H - T - B) * (1 - v / top);
+    let g = '';
+    for (let v = 0; v <= top; v += step) {
+      g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="${v ? 'grid' : 'axis'}"/>`;
+      g += `<text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" class="tick">${v}</text>`;
+    }
+    const every = n > 20 ? 5 : n > 12 ? 2 : 1;
+    weeks.forEach((w, i) => { if (i % every === 0 || i === n - 1) g += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" class="tick">${w.gw}</text>`; });
+    const path = (id) => cum[id].map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('');
+    const order = people.filter((p) => p.id !== pid && p.id !== meId).concat(people.filter((p) => p.id === meId && p.id !== pid), people.filter((p) => p.id === pid));
+    order.forEach((p) => {
+      const cls = p.id === pid ? 'ln-sel' : p.id === meId ? 'ln-you' : 'ln-rest';
+      g += `<path d="${path(p.id)}" class="${cls}"/>`;
+      if (cls !== 'ln-rest') g += `<circle cx="${x(n - 1)}" cy="${y(cum[p.id][n - 1])}" r="4.5" class="${cls}-dot"/>`;
+    });
+    // End labels for the coloured lines. If they would touch, move them apart and draw a short leader.
+    const labs = [pid, meId].filter((id, i, a) => id && a.indexOf(id) === i).map((id) => ({ id, v: cum[id][n - 1], y0: y(cum[id][n - 1]) }));
+    labs.forEach((l) => { l.y = l.y0; });
+    if (labs.length === 2 && Math.abs(labs[0].y - labs[1].y) < 30) {
+      const [hi, lo] = labs[0].y <= labs[1].y ? labs : [labs[1], labs[0]];
+      const mid = (hi.y + lo.y) / 2;
+      hi.y = mid - 15; lo.y = mid + 15;
+    }
+    labs.forEach((l) => {
+      l.y = Math.max(T + 10, Math.min(H - B - 12, l.y));
+      const nm = S.data.byId[l.id] ? S.data.byId[l.id].name : '';
+      const lx = W - R + 12;
+      if (Math.abs(l.y - l.y0) > 2) g += `<line x1="${x(n - 1) + 6}" y1="${l.y0}" x2="${lx - 3}" y2="${l.y}" class="leader"/>`;
+      g += `<text x="${lx}" y="${l.y - 2}" class="elab">${esc(nm)}</text><text x="${lx}" y="${l.y + 13}" class="eval">${l.v}</text>`;
+    });
+    g += `<line class="xhair" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>`;
+    weeks.forEach((w, i) => {
+      const half = n === 1 ? (W - L - R) / 2 : (W - L - R) / (n - 1) / 2;
+      g += `<rect class="hit" tabindex="0" role="img" aria-label="GW${w.gw}" data-i="${i}" x="${x(i) - half}" y="${T}" width="${half * 2}" height="${H - T - B}" fill="transparent"/>`;
+    });
+    raceState = { weeks, people, cum, pid, meId, x };
+    return `<svg class="race" viewBox="0 0 ${W} ${H}" role="img" aria-label="Running total of match points for every player, gameweek ${weeks[0].gw} to ${weeks[n - 1].gw}. The table below has every value.">${g}</svg>`;
+  }
+
   function chartSVG(weeks, pid) {
     chartWeeks = { weeks, pid };
-    const W = Math.round(Math.max(300, Math.min(1176, window.innerWidth - (window.innerWidth >= 900 ? 64 : 32)) - 40)), H = W < 500 ? 200 : 240, L = 28, R = 6, T = 10, B = 24;
-    const max = Math.max(30, ...weeks.map((w) => Math.max(w.best, w.pts[pid] || 0)));
+    const W = chartWidth(), H = W < 500 ? 180 : 220, L = 34, R = 6, T = 10, B = 24;
+    const max = Math.max(20, ...weeks.map((w) => Math.max(w.best, w.pts[pid] || 0)));
     const top = Math.ceil(max / 10) * 10;
     const y = (v) => T + (H - T - B) * (1 - v / top);
     const n = weeks.length;
     const slot = (W - L - R) / Math.max(n, 10);
-    const bw = Math.max(4, Math.min(28, slot - 4));
+    const bw = Math.max(4, Math.min(24, slot - 6));
     let g = '';
     for (let v = 0; v <= top; v += 10) {
-      g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/>`;
-      g += `<text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${v}</text>`;
+      g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="${v ? 'grid' : 'axis'}"/>`;
+      g += `<text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" class="tick">${v}</text>`;
     }
     const every = n > 20 ? 5 : n > 12 ? 2 : 1;
     weeks.forEach((w, i) => {
       const cx = L + slot * i + slot / 2;
       const v = w.pts[pid] || 0;
       const x0 = cx - bw / 2, y0 = y(v), yb = y(0), r = Math.min(4, bw / 2, yb - y0);
-      const fill = w.complete ? 'var(--bar)' : 'color-mix(in srgb, var(--bar) 55%, var(--panel))';
-      if (v > 0) {
-        g += `<path d="M${x0},${yb} V${y0 + r} Q${x0},${y0} ${x0 + r},${y0} H${x0 + bw - r} Q${x0 + bw},${y0} ${x0 + bw},${y0 + r} V${yb} Z" fill="${fill}"/>`;
-      }
-      g += `<line x1="${cx - bw / 2 - 2}" x2="${cx + bw / 2 + 2}" y1="${y(w.avg)}" y2="${y(w.avg)}" stroke="var(--pink)" stroke-width="2.5" stroke-linecap="round"/>`;
-      if (i % every === 0 || i === n - 1) g += `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${w.gw}</text>`;
-      g += `<rect class="hit" data-i="${i}" x="${L + slot * i}" y="${T}" width="${slot}" height="${H - T - B}" fill="transparent"/>`;
+      if (v > 0) g += `<path d="M${x0},${yb} V${y0 + r} Q${x0},${y0} ${x0 + r},${y0} H${x0 + bw - r} Q${x0 + bw},${y0} ${x0 + bw},${y0 + r} V${yb} Z" class="${w.complete ? 'bar' : 'bar prog'}"/>`;
+      if (bw >= 14) g += `<text x="${cx}" y="${y0 - 5}" text-anchor="middle" class="bval">${v}</text>`;
+      g += `<line x1="${cx - bw / 2 - 3}" x2="${cx + bw / 2 + 3}" y1="${y(w.avg)}" y2="${y(w.avg)}" class="avg"/>`;
+      if (i % every === 0 || i === n - 1) g += `<text x="${cx}" y="${H - 8}" text-anchor="middle" class="tick">${w.gw}</text>`;
+      g += `<rect class="hit" tabindex="0" role="img" aria-label="GW${w.gw}" data-i="${i}" x="${L + slot * i}" y="${T}" width="${slot}" height="${H - T - B}" fill="transparent"/>`;
     });
-    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Points per gameweek bar chart">${g}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Points per gameweek for ${esc(S.data.byId[pid] ? S.data.byId[pid].name : '')}, with the league average for each week">${g}</svg>`;
+  }
+
+  function placeTip(rect) {
+    tip.hidden = false;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let x = rect.left + rect.width / 2 - tw / 2;
+    x = Math.max(8, Math.min(window.innerWidth - tw - 8, x));
+    let yy = rect.top - th - 6; if (yy < 8) yy = rect.top + 8;
+    tip.style.left = x + 'px'; tip.style.top = yy + 'px';
   }
 
   function bindChart() {
-    const svg = app.querySelector('.chart svg');
-    if (!svg || !chartWeeks) return;
-    const show = (ev, el) => {
-      const w = chartWeeks.weeks[+el.getAttribute('data-i')];
-      const p = S.data.byId[chartWeeks.pid];
-      tip.innerHTML = `<b>GW${w.gw}</b>${w.complete ? '' : ' (in progress)'}<br>${esc(p ? p.name : '')}: <b>${w.pts[chartWeeks.pid] || 0}</b><br>League average: ${w.avg.toFixed(1)}<br>${w.complete ? 'Won by' : 'Leading'}: ${w.leaders.map(esc).join(', ')} (${w.best})`;
-      tip.hidden = false;
-      const rect = el.getBoundingClientRect();
-      const tw = tip.offsetWidth, th = tip.offsetHeight;
-      let x = rect.left + rect.width / 2 - tw / 2;
-      x = Math.max(8, Math.min(window.innerWidth - tw - 8, x));
-      let yy = rect.top - th - 6; if (yy < 8) yy = rect.top + 8;
-      tip.style.left = x + 'px'; tip.style.top = yy + 'px';
-    };
-    svg.querySelectorAll('.hit').forEach((el) => {
-      el.addEventListener('mouseenter', (ev) => show(ev, el));
-      el.addEventListener('mouseleave', hideTip);
-      el.addEventListener('click', (ev) => { show(ev, el); });
-    });
+    const week = app.querySelector('[data-chart="week"] svg');
+    if (week && chartWeeks) {
+      const show = (el) => {
+        const w = chartWeeks.weeks[+el.getAttribute('data-i')];
+        const p = S.data.byId[chartWeeks.pid];
+        tip.innerHTML = `<b>GW${w.gw}</b>${w.complete ? '' : ' (in progress)'}<br><b>${w.pts[chartWeeks.pid] || 0}</b> ${esc(p ? p.name : '')}<br><b>${w.avg.toFixed(1)}</b> league average<br><b>${w.best}</b> ${w.complete ? 'top score' : 'best so far'}: ${w.leaders.map(esc).join(', ')}`;
+        placeTip(el.getBoundingClientRect());
+      };
+      week.querySelectorAll('.hit').forEach((el) => {
+        el.addEventListener('mouseenter', () => show(el));
+        el.addEventListener('focus', () => show(el));
+        el.addEventListener('mouseleave', hideTip);
+        el.addEventListener('blur', hideTip);
+        el.addEventListener('click', () => show(el));
+      });
+    }
+    const race = app.querySelector('svg.race');
+    if (race && raceState) {
+      const xh = race.querySelector('.xhair');
+      const show = (el) => {
+        const i = +el.getAttribute('data-i');
+        const st = raceState, w = st.weeks[i];
+        const xs = st.x(i);
+        xh.setAttribute('x1', xs); xh.setAttribute('x2', xs); xh.setAttribute('visibility', 'visible');
+        const rows = st.people.map((p) => ({ p, v: st.cum[p.id][i] })).sort((a, b) => b.v - a.v || a.p.name.localeCompare(b.p.name));
+        tip.innerHTML = `<b>After GW${w.gw}</b>${w.complete ? '' : ' (in progress)'}<span class="tl">${rows.map((r) => `<span class="${r.p.id === st.pid ? 'k-sel' : r.p.id === st.meId ? 'k-you' : 'k-rest'}"><b>${r.v}</b> ${esc(r.p.name)}</span>`).join('')}</span>`;
+        const rc = el.getBoundingClientRect();
+        placeTip({ left: rc.left, width: rc.width, top: race.getBoundingClientRect().top + 20 });
+      };
+      const off = () => { xh.setAttribute('visibility', 'hidden'); hideTip(); };
+      race.querySelectorAll('.hit').forEach((el) => {
+        el.addEventListener('mouseenter', () => show(el));
+        el.addEventListener('focus', () => show(el));
+        el.addEventListener('mouseleave', off);
+        el.addEventListener('blur', off);
+        el.addEventListener('click', () => show(el));
+      });
+    }
   }
   function hideTip() { tip.hidden = true; }
   let resizeT = null, lastW = window.innerWidth;
@@ -744,21 +892,23 @@ ${pageHead('Gameweeks', 'Points per week, and who took each one.')}
     const done = six.filter(isDone).length;
     const anyLive = six.some(isLive);
     const anyDone = done > 0 || anyLive;
+    const focus = S.gwFocus && S.gwFocus.gw === gw ? six.findIndex((f) => f.id === S.gwFocus.fid) : -1;
     const rows = people.map((p) => {
       let tot = 0, live = 0;
-      const cells = six.map((f) => {
+      const cells = six.map((f, i) => {
+        const sel = i === focus ? ' class="sel"' : '';
         const pr = d.predMap.get(p.id + ':' + f.id);
         if (!pr) {
           const hidden = !(S.me && p.id === S.me.id) && !isLocked(f);
           return hidden
-            ? `<td><span class="pk hid" title="Hidden until kick-off">${ICON.lock}<span class="sr">Hidden until kick-off</span></span></td>`
-            : '<td><span class="pk none" title="No pick"><span class="sr">No pick</span></span></td>';
+            ? `<td${sel}><span class="pk hid" title="Hidden until kick-off">${ICON.lock}<span class="sr">Hidden until kick-off</span></span></td>`
+            : `<td${sel}><span class="pk none" title="No pick"><span class="sr">No pick</span></span></td>`;
         }
         const pts = ptsNow(pr, f);
         if (pts != null) { if (isDone(f)) tot += pts; else live += pts; }
         const cls = (pts == null ? 'wait' : 'p' + pts) + (isLive(f) ? ' prov' : '');
         const t = `${p.name}: ${f.home} ${pr.home_goals}-${pr.away_goals} ${f.away}${pts != null ? `, ${pts} point${pts === 1 ? '' : 's'}` : ''}`;
-        return `<td><span class="pk ${cls}" title="${esc(t)}"><b>${pr.home_goals}-${pr.away_goals}</b>${pts ? `<i><span class="sr">, </span>${pts}<span class="sr"> points</span></i>` : ''}</span></td>`;
+        return `<td${sel}><span class="pk ${cls}" title="${esc(t)}"><b>${pr.home_goals}-${pr.away_goals}</b>${pts ? `<i><span class="sr">, </span>${pts}<span class="sr"> points</span></i>` : ''}</span></td>`;
       }).join('');
       return { p, tot, live, html: cells };
     });
@@ -767,16 +917,22 @@ ${pageHead('Gameweeks', 'Points per week, and who took each one.')}
     if (anyDone) rows.sort((a, b) => b.proj - a.proj || a.p.name.localeCompare(b.p.name));
     rows.forEach((r, i) => { r.rank = anyDone ? (i && rows[i - 1].proj === r.proj ? rows[i - 1].rank : i + 1) : null; });
 
-    const head = six.map((f) => {
+    const head = six.map((f, i) => {
       let res, st;
       if (isDone(f)) { res = `${f.home_goals}-${f.away_goals}`; st = 'FT'; }
-      else if (isLive(f)) { res = `${f.home_goals}-${f.away_goals}`; st = '<span class="live">Live</span>'; }
+      else if (isLive(f)) { res = `${f.home_goals}-${f.away_goals}`; st = '<span class="live"><span class="livedot"></span>Live</span>'; }
       else if (f.status === 'IN_PLAY') { res = '<span class="live">Live</span>'; st = ''; }
       else if (f.status === 'POSTPONED') { res = 'P-P'; st = 'Off'; }
       else { res = esc(hm(f.ko, LOCAL)); st = esc(fmt(f.ko, LOCAL, { weekday: 'short' })); }
-      const cls = isDone(f) ? ' ft' : isLive(f) ? ' lv' : '';
-      return `<th scope="col" class="mcol${cls}" title="${esc(f.home)} v ${esc(f.away)}, ${esc(whenText(f.ko))}"><span class="mh"><span class="ch">${crest(f.home, 20)}</span><span class="rs">${res}</span><span class="ca">${crest(f.away, 20)}</span></span><span class="ms">${st}</span><span class="sr">${esc(f.home)} v ${esc(f.away)}</span></th>`;
+      const cls = (isDone(f) ? ' ft' : isLive(f) ? ' lv' : '') + (i === focus ? ' sel' : '');
+      return `<th scope="col" class="mcol${cls}"><button type="button" class="mbtn" data-m="${f.id}" aria-pressed="${i === focus}" title="${esc(f.home)} v ${esc(f.away)}, ${esc(whenText(f.ko))}"><span class="mh"><span class="ch">${crest(f.home, 22)}</span><span class="rs">${res}</span><span class="ca">${crest(f.away, 22)}</span></span><span class="ms">${st}</span><span class="sr">${esc(f.home)} v ${esc(f.away)}. Show everyone’s pick</span></button></th>`;
     }).join('');
+    // How many called each match exactly: counted from the picks shown above (finished or live).
+    const exactRow = anyDone ? `<tfoot><tr><th scope="row" class="pn" title="Players with the exact score">Exact</th>${six.map((f, i) => {
+      if (!isDone(f) && !isLive(f)) return `<td${i === focus ? ' class="sel"' : ''}></td>`;
+      const n = people.filter((p) => ptsNow(d.predMap.get(p.id + ':' + f.id), f) === 5).length;
+      return `<td${i === focus ? ' class="sel"' : ''}><span class="xc${n ? ' hit' : ''}">${n}</span></td>`;
+    }).join('')}<td class="tot"></td></tr></tfoot>` : '';
     const body = rows.map((r) => {
       const me = S.me && r.p.id === S.me.id;
       return `<tr class="${me ? 'me' : ''}"><th scope="row" class="pn"><span class="rk">${r.rank != null ? r.rank : ''}</span><span class="nm">${esc(r.p.name)}</span></th>${r.html}<td class="tot">${anyDone ? `${r.proj}${r.live ? `<small class="livetag" title="Includes ${r.live} provisional point${r.live === 1 ? '' : 's'} from matches in play">live</small>` : ''}` : ''}</td></tr>`;
@@ -784,31 +940,81 @@ ${pageHead('Gameweeks', 'Points per week, and who took each one.')}
 
     // One status line: results in and who leads, then your own points.
     let status = '';
-    if (!six.length) status = 'The six for this week have not been picked yet.';
+    if (!six.length) status = 'The six for this week have not been chosen yet.';
     else if (!anyDone) {
       const first = six[0].ko;
-      status = first.getTime() > Date.now() ? `First kick-off ${esc(whenText(first))}.` : 'Under way. No results in yet.';
+      status = first.getTime() > Date.now() ? `First kick-off ${esc(whenText(first))}.` : 'Under way. No results yet.';
     } else {
       const best = rows[0].proj;
       const lead = rows.filter((r) => r.proj === best).map((r) => esc(r.p.name));
       const allIn = done === six.length;
       const nLive = six.filter(isLive).length;
-      status = `${done} of ${six.length} results in${nLive ? `, ${nLive} live` : ''}. ${lead.join(', ')} ${allIn ? 'won it' : (lead.length > 1 ? 'lead' : 'leads')} with ${best}${nLive ? ' if it stays like this' : ''}.`;
+      const who = andList(lead);
+      const one = lead.length === 1;
+      status = allIn
+        ? `All six in. ${who} ${one ? 'tops' : 'top'} the week with ${best}.`
+        : `${done} of ${six.length} in${nLive ? `, ${nLive} live` : ''}. ${who} ${one ? 'leads' : 'lead'} with ${best}${nLive ? ' as it stands' : ''}.`;
       const mineRow = S.me && rows.find((r) => r.p.id === S.me.id);
       if (mineRow) status += ` You have ${mineRow.proj}.`;
     }
     let lockNote;
-    if (perMatch) lockNote = 'Other players’ picks show as each match kicks off.';
+    if (perMatch) lockNote = 'Everyone’s pick for a match shows at its kick-off.';
     else if (locked) lockNote = `Picks locked ${esc(whenText(lock))}.`;
     else lockNote = lock ? `Picks lock ${esc(whenText(lock))}. Until then you only see your own.` : '';
 
     return `
 ${pageHead(`Gameweek ${gw}`, status, gwStepper('gw', gw))}
 ${six.length ? `<div class="panel bleed">
-<div class="grid-scroll"><table class="picks"><thead><tr><th scope="col" class="pn"><span class="sr">Player</span></th>${head}<th scope="col" class="tot">Pts</th></tr></thead><tbody>${body}</tbody></table></div>
-<div class="panel-foot legend"><span><span class="pk p5"><b>5</b></span>Exact score</span><span><span class="pk p3"><b>3</b></span>Goal difference</span><span><span class="pk p1"><b>1</b></span>Result</span><span><span class="pk hid">${ICON.lock}</span>Hidden until kick-off</span></div>
+<div class="grid-scroll"><table class="picks${focus >= 0 ? ' focused' : ''}"><thead><tr><th scope="col" class="pn"><span class="sr">Player</span></th>${head}<th scope="col" class="tot">Pts</th></tr></thead><tbody>${body}</tbody>${exactRow}</table></div>
+${focus >= 0 ? matchFocus(six[focus], people) : ''}
+<div class="panel-foot legend"><span><span class="pk p5"><b>5</b></span>Exact score</span><span><span class="pk p3"><b>3</b></span>Goal difference</span><span><span class="pk p1"><b>1</b></span>Result</span><span><span class="pk hid">${ICON.lock}</span>Hidden until kick-off</span><span class="muted">Choose a match to see who called it</span></div>
 </div>` : ''}
 <p class="note">${lockNote} <a href="#/fixtures/${gw}">All GW${gw} fixtures</a></p>`;
+  }
+
+  // One match, everyone's pick, grouped by what it scored.
+  function matchFocus(f, people) {
+    const d = S.data;
+    const started = isDone(f) || isLive(f);
+    const groups = [[5, 'Exact score'], [3, 'Goal difference'], [1, 'Result'], [0, 'No points']].map(([pts, label]) => ({ pts, label, list: [] }));
+    const waiting = [], none = [], hidden = [];
+    people.forEach((p) => {
+      const pr = d.predMap.get(p.id + ':' + f.id);
+      if (!pr) { (!(S.me && p.id === S.me.id) && !isLocked(f) ? hidden : none).push(p); return; }
+      const pts = ptsNow(pr, f);
+      const item = { p, pr };
+      if (pts == null) waiting.push(item); else groups.find((g) => g.pts === pts).list.push(item);
+    });
+    const chip = (it, cls) => `<li class="${S.me && it.p.id === S.me.id ? 'me' : ''}"><span class="pk ${cls}"><b>${it.pr.home_goals}-${it.pr.away_goals}</b></span>${esc(it.p.name)}</li>`;
+    let body = '';
+    if (started) {
+      body = groups.filter((g) => g.list.length).map((g) => `<div class="fg"><h3>${g.label}${g.pts ? ` <span class="muted">${g.pts} pt${g.pts === 1 ? '' : 's'}</span>` : ''}</h3><ul>${g.list.map((it) => chip(it, 'p' + g.pts)).join('')}</ul></div>`).join('');
+    } else if (waiting.length) {
+      body = `<div class="fg"><h3>Picks</h3><ul>${waiting.map((it) => chip(it, 'wait')).join('')}</ul></div>`;
+    }
+    if (none.length) body += `<div class="fg"><h3>No pick</h3><p>${none.map((p) => esc(p.name)).join(', ')}</p></div>`;
+    if (hidden.length) body += `<div class="fg"><h3>Hidden until kick-off</h3><p>${hidden.map((p) => esc(p.name)).join(', ')}</p></div>`;
+    const sc = isDone(f) || isLive(f) ? `${f.home_goals}-${f.away_goals}` : 'v';
+    const st = isDone(f) ? 'Full time' : isLive(f) ? 'Live' : f.status === 'POSTPONED' ? 'Postponed' : esc(whenText(f.ko));
+    return `<section class="mfocus" aria-label="${esc(f.home)} v ${esc(f.away)}">
+      <div class="mf-h"><h2><span class="nm">${esc(f.home)}</span> <span class="mf-s">${sc}</span> <span class="nm">${esc(f.away)}</span></h2><span class="muted small">${st}</span><button type="button" class="iconbtn sm" data-mclose aria-label="Close">${ICON.close}</button></div>
+      <div class="mf-b">${body || '<p class="muted">No picks to show yet.</p>'}</div>
+    </section>`;
+  }
+
+  function bindGw() {
+    const gw = parseInt(route().arg, 10);
+    app.querySelectorAll('.mbtn').forEach((b) => b.addEventListener('click', () => {
+      const fid = +b.getAttribute('data-m');
+      S.gwFocus = S.gwFocus && S.gwFocus.gw === gw && S.gwFocus.fid === fid ? null : { gw, fid };
+      render();
+      const fx = app.querySelector('.mfocus');
+      if (fx && fx.getBoundingClientRect().top > window.innerHeight - 80) fx.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      const again = app.querySelector(`.mbtn[data-m="${fid}"]`);
+      if (again) again.focus({ preventScroll: true });
+    }));
+    const c = app.querySelector('[data-mclose]');
+    if (c) c.addEventListener('click', () => { const fid = S.gwFocus && S.gwFocus.fid; S.gwFocus = null; render(); const b = app.querySelector(`.mbtn[data-m="${fid}"]`); if (b) b.focus({ preventScroll: true }); });
   }
 
   // ---------------------------------------------------------------- fixtures
@@ -834,7 +1040,7 @@ ${six.length ? `<div class="panel bleed">
         if (pr) {
           const pts = ptsNow(pr, f);
           extra.push(`Your pick <b>${pr.home_goals}-${pr.away_goals}</b>${pts != null ? ' ' + ptsChip(pts) + (isLive(f) ? ' <span class="livetag">live</span>' : '') : ''}`);
-        } else if (!isLocked(f)) extra.push(`<a href="#/predict/${f.gw}">No pick yet. Add one</a>`);
+        } else if (!isLocked(f)) extra.push(`<a href="#/predict/${f.gw}">No pick yet. Add it</a>`);
       }
       return `<div class="fx${f.status === 'POSTPONED' ? ' dim' : ''}">
         <div class="time">${timeHTML(f.ko)}</div>
@@ -848,7 +1054,7 @@ ${six.length ? `<div class="panel bleed">
     const zoneName = fmt(now, LOCAL, { timeZoneName: 'long' }).split(', ').pop();
     const zoneLine = localIsUK
       ? `Kick-off times are UK time (${esc(tzAbbr(now, UK))}).`
-      : `Kick-off times are in ${esc(zoneName)}, with UK time beside them when it differs. Days follow the UK matchday so everyone sees the same list.`;
+      : `Times are ${esc(zoneName)}, with UK time beside them when it differs. Days follow the UK matchday.`;
     let lockLine = '';
     if (lock) {
       lockLine = d.set.lock_mode === 'per_match'
@@ -912,7 +1118,7 @@ ${rows ? `<div class="fixtures-days">${rows}</div>` : '<div class="panel pad emp
     else if (S.me) vis = 'Only your own picks are shown. Sam will reveal everyone’s picks later in the season.';
     else vis = 'The picks are hidden until Sam reveals them later in the season.';
 
-    const lede = `Up to ${max} extra points, settled as the season’s awards are decided. They go straight into the Bonus column of the table.`;
+    const lede = `Up to ${max} extra points, added to the table as each award is decided.`;
 
     if (!pickers.length) {
       const list = groups.map((g) => `<li><span>${esc(g.label)}${g.slots.length > 1 ? ` (${g.slots.length} picks)` : ''}</span><span>${ptsLabel(g)}</span></li>`).join('');
@@ -999,28 +1205,39 @@ ${main}
     });
     const max = d.slots.reduce((t, x) => t + x.points_each, 0);
     return `
-${pageHead('How it works', 'Six matches a week. Call the score.')}
+${pageHead('Rules', 'Six matches a week. Predict the score of each.')}
 <div class="rules">
   <section class="panel pad"><h2>Points per match</h2>
     <ul class="pts-list">
       <li><span class="pk p5"><b>5</b></span><span>Exact score. Predict 2-1, result\u00a02-1.</span></li>
-      <li><span class="pk p3"><b>3</b></span><span>Right goal difference, wrong score. Predict 2-1, result 3-2. A correctly called draw always lands here or\u00a0higher.</span></li>
+      <li><span class="pk p3"><b>3</b></span><span>Right goal difference, wrong score. Predict 2-1, result 3-2. A correct draw always scores at least\u00a03.</span></li>
       <li><span class="pk p1"><b>1</b></span><span>Right winner, wrong margin. Predict 3-0, result 1-0. Draws never score 1.</span></li>
       <li><span class="pk p0"><b>0</b></span><span>Anything else.</span></li>
     </ul>
   </section>
   <section class="panel pad"><h2>The six and the deadline</h2>
-    <p>Each gameweek has six Super 6 matches. Arsenal, Chelsea, Man City and Man United are in the six every week.</p>
-    <p>${perMatch ? 'Each pick locks at that match\u2019s own kick-off, so you can still pick Sunday\u2019s games after Saturday\u2019s have started.' : 'All six picks lock at the first Super 6 kick-off of the gameweek.'} The lock is checked by the server, so a wrong clock on your phone makes no difference. Nobody, Sam included, can see other people\u2019s picks for a match before it locks.</p>
+    <p>Each gameweek has six Super 6 matches. Arsenal, Chelsea, Man City and Man United are always among them.</p>
+    <p>${perMatch ? 'Each pick locks at that match\u2019s own kick-off, so you can still pick Sunday\u2019s games after Saturday\u2019s have started.' : 'All six picks lock at the first Super 6 kick-off of the gameweek.'} The server checks the lock, so the clock on your phone does not matter. Nobody, Sam included, can see anyone else\u2019s pick for a match before it locks.</p>
   </section>
   <section class="panel pad"><h2>Season bonus, up to ${max} points</h2>
     <ul class="blist">${groups.map((g) => `<li><span>${esc(g.label)}${g.n > 1 ? ` (${g.n} picks)` : ''}</span><span>${g.n > 1 ? `${g.each} each` : `${g.each} pts`}</span></li>`).join('')}</ul>
   </section>
   <section class="panel pad"><h2>Tie-breaks and times</h2>
     <p>Ties break on total points, then exact scores, then correct goal differences.</p>
-    <p>Kick-offs show in your own time zone, with UK time beside them when it differs. Gameweeks are listed by UK matchday.</p>
+    <p>Kick-offs show in your local time, with UK time beside them when it differs. Gameweeks are listed by UK matchday.</p>
   </section>
 </div>`;
+  }
+
+  // ---------------------------------------------------------------- more (phones)
+  // The bottom bar's fifth slot: everything that is not needed every matchday.
+  function viewMore() {
+    const items = [['bonus', 'Bonus', 'Season picks and who has them right'], ['rules', 'Rules', 'Points, the deadline and tie-breaks']];
+    if (S.me && S.me.is_admin) items.push(['admin', 'Admin', 'The six, results, late picks and settings']);
+    items.push(S.session ? ['account', 'Your account', 'Change your password or sign out'] : ['login', 'Sign in', 'Enter your own picks']);
+    return `
+${pageHead('More', '')}
+<ul class="morelist panel">${items.map(([k, l, t]) => `<li><a href="#/${k}">${NAV_ICON[k === 'login' ? 'account' : k]}<span><b>${l}</b><small>${t}</small></span>${ICON.next}</a></li>`).join('')}</ul>`;
   }
 
   // ---------------------------------------------------------------- predictions
@@ -1062,11 +1279,11 @@ ${pageHead('How it works', 'Six matches a week. Call the score.')}
     const editable = !!S.me;
     const openCount = six.filter((f) => !isLocked(f)).length;
     let lede;
-    if (!six.length) lede = 'The six for this week have not been picked yet.';
-    else if (allLocked) lede = `All picks for this week are locked. <a href="#/gw/${gw}">See everyone’s picks</a>.`;
+    if (!six.length) lede = 'The six for this week have not been chosen yet.';
+    else if (allLocked) lede = `All locked. <a href="#/gw/${gw}">See everyone’s picks</a>.`;
     else if (perMatch) {
       const next = six.filter((f) => !isLocked(f))[0];
-      lede = `Each pick locks at its own kick-off. Next up: ${esc(next.home)} v ${esc(next.away)}, ${esc(untilText(next.ko))}.`;
+      lede = `Each pick locks at kick-off. Next: ${esc(next.home)} v ${esc(next.away)}, ${esc(untilText(next.ko))}.`;
     } else lede = `Picks lock ${esc(untilText(lock))}, at the first Super 6 kick-off: ${esc(whenText(lock))}.`;
 
     let lastDay = '';
@@ -1112,7 +1329,7 @@ ${pageHead('How it works', 'Six matches a week. Call the score.')}
     }
 
     let top = '';
-    if (!S.session) top = `<div class="notice"><span>Sign in to enter your picks. Other players’ picks show once each match locks.</span><a class="btn sm" href="#/login">Sign in</a></div>`;
+    if (!S.session) top = `<div class="notice"><span>Sign in to enter your picks. Everyone else’s show as each match locks.</span><a class="btn sm" href="#/login">Sign in</a></div>`;
     let progress = '';
     if (S.me && six.length) {
       const have = six.filter((f) => d.predMap.get(S.me.id + ':' + f.id)).length;
@@ -1130,12 +1347,12 @@ ${pageHead('How it works', 'Six matches a week. Call the score.')}
       side = `<aside class="predside" aria-label="Your picks this week"><h2 class="ps-t">Your picks</h2>${progress}${lockLine}</aside>`;
     }
     return `<div class="${side ? 'predlay' : 'narrow'}">
-<div class="pl-head">${pageHead('Predictions', `Gameweek ${gw}. ${lede}`, gwStepper('predict', gw))}</div>
+<div class="pl-head">${pageHead('Picks', `Gameweek ${gw}. ${lede}`, gwStepper('predict', gw))}</div>
 ${side}
 <div class="pl-main">
 ${top}
 ${six.length ? `<div class="panel bleed" id="predForm">${rows}</div>` : ''}
-${S.me && openCount ? '<p class="note">Picks save by themselves as soon as both scores are in. Type a number and the cursor jumps to the next box, or use the buttons (use + for 10 or more). You can change a pick as often as you like until that match locks; clear both boxes to remove it.</p>' : ''}</div></div>`;
+${S.me && openCount ? '<p class="note">Picks save as soon as both scores are in. Typing a digit moves you to the next box; for 10 or more, use +. Change a pick as often as you like until that match locks. Clear both boxes to remove it.</p>' : ''}</div></div>`;
   }
 
   // Autosave: each match saves on its own as soon as both scores are filled in.
