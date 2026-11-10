@@ -606,14 +606,14 @@
         <td class="pos"><span class="rank">${b.rank}</span></td>
         <td class="mvc">${mv}</td>
         <td class="l name"><button type="button" class="rowbtn" aria-expanded="${isOpen}" aria-controls="${did}"><span class="nmx">${esc(b.name)}${me ? '<span class="you">You</span>' : ''}</span><span class="sub">${gapTxt}</span>${ICON.chev}</button></td>
-        <td class="wide">${b.exact}</td><td class="wide">${b.gd}</td><td class="wide">${b.outcome}</td><td class="wide">${b.bonus}</td>
+        <td class="wide">${b.exact}</td><td class="wide">${b.gd}</td><td class="wide">${b.outcome}</td><td class="mwide matchc">${b.match_pts}</td><td class="wide">${b.bonus}</td>
         <td class="xwide picksc">${picks[b.player_id] || 0}<small> / ${picksTotal}</small></td>
         <td class="xwide formc">${lastFive.length ? formHTML(lastFive, b.player_id) : ''}</td>
         <td class="l5">${b.last5}</td>
         <td class="wide gapc">${behind ? `−${behind}` : '<span class="muted">–</span>'}</td>
         <td class="tot">${b.total}${live[b.player_id] ? `<small class="livetag" title="${live[b.player_id]} provisional point${live[b.player_id] === 1 ? '' : 's'} from matches in play, not counted until full time">+${live[b.player_id]} live</small>` : ''}</td>
       </tr>
-      <tr class="det${me ? ' me' : ''}" id="${did}"${isOpen ? '' : ' hidden'}><td colspan="12">${playerDetail(b, started, picks[b.player_id] || 0, picksTotal)}</td></tr>`;
+      <tr class="det${me ? ' me' : ''}" id="${did}"${isOpen ? '' : ' hidden'}><td colspan="13">${playerDetail(b, started, picks[b.player_id] || 0, picksTotal)}</td></tr>`;
     }).join('');
     const facts = `Gameweek ${d.currentGw} of 38 · ${scored} of ${total6} Super 6 results in${nLive ? `<span class="liveline"><span class="livedot"></span>${nLive} live now. Live points count at full time.</span>` : ''}`;
     return `
@@ -628,7 +628,7 @@ ${pageHead('League table', facts)}
   <thead><tr>
     <th class="l pos" title="Position">#</th><th class="l mvc"><span class="sr">Move</span></th><th class="l">Player</th>
     <th class="wide" title="Exact scores, 5 points each">Exact</th><th class="wide" title="Correct goal difference, 3 points each">GD</th><th class="wide" title="Correct result, 1 point each">Result</th>
-    <th class="wide" title="Season bonus points">Bonus</th>
+    <th class="mwide" title="Points from match picks">Match</th><th class="wide" title="Season bonus points">Bonus</th>
     <th class="xwide" title="Super 6 picks made, out of every Super 6 match this season">Picks</th>
     <th class="xwide formh" title="Points in each of the last five complete gameweeks">Form</th>
     <th class="l5" title="Points over the last five complete gameweeks">Last 5</th>

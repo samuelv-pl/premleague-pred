@@ -251,8 +251,8 @@ select.sel:hover { border-color: var(--ink-2); }
 .summary .item { padding: 16px 20px; }
 .summary .item + .item { border-top: 1px solid var(--line); }
 .summary p { margin: 0; color: var(--ink-2); font-size: 15px; line-height: 1.45; display: flex; flex-direction: column; gap: 2px; height: 100%; }
-.summary p b { color: var(--ink); font-size: 17px; display: flex; align-items: center; gap: 8px; text-wrap: balance; }
-.summary p b .ic { color: var(--brand-ink); width: 18px; height: 18px; }
+.summary p b { color: var(--ink); font-size: 17px; line-height: 1.35; display: flex; align-items: flex-start; gap: 8px; text-wrap: balance; }
+.summary p b .ic { color: var(--brand-ink); width: 18px; height: 18px; margin-top: 2.5px; }
 .summary .ln { display: block; text-wrap: balance; padding-left: 26px; }
 .summary .act { align-self: flex-start; display: inline-flex; align-items: center; min-height: 32px; margin: auto 0 -6px 26px; padding-top: 4px; font-size: 14px; font-weight: 600; color: var(--brand-ink); white-space: nowrap; }
 @media (min-width: 760px) {
@@ -326,7 +326,7 @@ table { border-collapse: collapse; width: 100%; }
 .dcols a { font-size: 11px; color: var(--muted); text-decoration: none; min-width: 20px; text-align: center; }
 .dcols a:hover { color: var(--brand-ink); text-decoration: underline; }
 .dbar i.h0 { height: 0%; } .dbar i.h5 { height: 5%; } .dbar i.h10 { height: 10%; } .dbar i.h15 { height: 15%; } .dbar i.h20 { height: 20%; } .dbar i.h25 { height: 25%; } .dbar i.h30 { height: 30%; } .dbar i.h35 { height: 35%; } .dbar i.h40 { height: 40%; } .dbar i.h45 { height: 45%; } .dbar i.h50 { height: 50%; } .dbar i.h55 { height: 55%; } .dbar i.h60 { height: 60%; } .dbar i.h65 { height: 65%; } .dbar i.h70 { height: 70%; } .dbar i.h75 { height: 75%; } .dbar i.h80 { height: 80%; } .dbar i.h85 { height: 85%; } .dbar i.h90 { height: 90%; } .dbar i.h95 { height: 95%; } .dbar i.h100 { height: 100%; } 
-.wide, .xwide { display: none; }
+.wide, .xwide, .mwide { display: none; }
 @media (min-width: 640px) {
   .wide { display: table-cell; }
   .rowbtn .sub { display: none; }
@@ -335,7 +335,8 @@ table { border-collapse: collapse; width: 100%; }
   .league th.tot, .league td.tot { width: 76px; }
   .dstats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
-@media (min-width: 900px) { .xwide { display: table-cell; } }
+@media (min-width: 760px) { .mwide { display: table-cell; } }
+@media (min-width: 1000px) { .xwide { display: table-cell; } }
 @media (max-width: 420px) {
   .league th, .league td { padding-left: 6px; padding-right: 6px; }
   .league th:first-child, .league td:first-child { padding-left: 10px; }
@@ -526,16 +527,23 @@ img.crest { width: 28px; height: 28px; object-fit: contain; flex: none; }
   .picks thead th { padding: 0; }
   .picks .pn { padding-left: 20px; padding-right: 12px; font-size: 16px; }
   .picks .tot { padding-right: 20px; font-size: 18px; width: 64px; }
+  .mh img.crest { width: 24px; height: 24px; }
+  .mh .rs { font-size: 15px; }
+  .mcol.ft .mh .rs { font-size: 17px; }
+  .pk { min-width: 48px; height: 30px; padding: 0 6px; }
+  .pk b { font-size: 15px; }
+  .pk i { font-size: 11px; }
+}
+/* The crest-score-crest header in one line only once six of them fit beside the names. */
+@media (min-width: 1000px) {
   .mh { display: flex; gap: 8px; }
   .mh img.crest { width: 26px; height: 26px; }
   .mh .crest.code { font-size: 10px; height: 20px; padding: 0 4px; min-width: 30px; }
-  .mh .rs { font-size: 15px; min-width: 40px; }
+  .mh .rs { min-width: 40px; }
   .mcol.ft .mh .rs { font-size: 18px; }
   .mcol .ms { margin-top: 4px; }
   .mbtn { min-height: 64px; padding: 12px 4px 8px; }
-  .pk { min-width: 52px; height: 30px; padding: 0 8px; }
-  .pk b { font-size: 15px; }
-  .pk i { font-size: 11px; }
+  .pk { min-width: 52px; padding: 0 8px; }
 }
 
 /* ---------- bonus ---------- */
@@ -781,3 +789,5 @@ html:has(.predside) { scroll-padding-top: 64px; }
 }
 @keyframes livepulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+.mcol .ms .livedot { width: 6px; height: 6px; margin: 0 3px 1px 0; }
+.picks td.tot .livetag { padding: 1px 4px; font-size: 10px; }
