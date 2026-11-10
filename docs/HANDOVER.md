@@ -175,3 +175,7 @@ It is still live. In this session the Sheet was changed as follows, so be aware 
 4. Cutover date for retiring the Sheet, and how the nightly backup should look.
 5. How late joiners and players leaving should be handled (`active` flag exists; points for missed weeks are not defined).
 6. Whether the bonus picks should be public from the start or revealed later (`bonus_public`).
+
+## Update 10 Nov 2026: bonus names
+
+`db/08_bonus_names.sql` rewrites bonus picks to one spelling per answer (full names for people, for example "Bruno F" / "Bruno. F" / "Bruno F." become "Bruno Fernandes"). Originals are kept in `bonus_picks_original` (RLS on, no policies). The site needs no change: the Bonus tab groups by the stored text. Sam runs the file in the SQL Editor; `bonus_actual.accepted` should use the same names.

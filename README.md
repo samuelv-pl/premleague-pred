@@ -38,6 +38,16 @@ GitHub runs the scheduled sync late (about once an hour on a quiet repo), so Sup
 3. **New query** again. Open `db/07_live_sync.sql` here on GitHub, copy it all, paste, click **Run**.
 4. Wait two minutes, then run `select last_status, last_applied_at from public.sync_state;` It should say `ok, ... changed` with a recent time. The site footer then shows "scores last checked" with that time.
 
+## Bonus names: one spelling per answer (one time, about 1 minute)
+
+The Bonus tab was listing "Bruno F", "Bruno. F" and "Bruno F." as three different answers. This tidies the names so each answer appears once. Nobody's pick changes, only how it is spelled. What each person originally typed is kept in a table called `bonus_picks_original`.
+
+1. Supabase > **SQL Editor** > **New query**.
+2. Open `db/08_bonus_names.sql` here on GitHub, copy it all, paste, click **Run**.
+3. The result is a list of every answer and how many people picked it. "Bruno Fernandes" should show 8.
+
+When the awards are settled, type the names in Admin exactly as they appear on the Bonus tab.
+
 ## Two settings to check in Supabase
 
 1. **Sign-ups off:** Authentication > Sign In / Providers > turn off **Allow new users to sign up**. (Uninvited emails are blocked by the database anyway, but this closes the door properly.)
